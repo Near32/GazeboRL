@@ -1,6 +1,6 @@
 from GazeboRL import GazeboRL, Swarm1GazeboRL
 import time
-
+import rospy
 
 #commands = {'launch': None}
 #launchCom = []
@@ -22,12 +22,24 @@ env = Swarm1GazeboRL()
 env.make()
 
 
-print('\n\nwait for 5 sec...\n\n')
-time.sleep(5)
+print('\n\nwait for 10 sec...\n\n')
+time.sleep(10)
 
 env.setPause(False)
 
+
 print('\n\nwait for 10 sec...\n\n')
 time.sleep(10)
+
+
+env.reset()
+
+rospy.spin()
+
+
+print('\n\nwait for 10 sec...\n\n')
+time.sleep(10)
+
+
 
 env.close()
