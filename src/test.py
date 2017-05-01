@@ -34,7 +34,9 @@ time.sleep(10)
 
 env.reset()
 
-rospy.spin()
+
+action = [0.0,2.0]
+env.step(action)
 
 
 print('\n\nwait for 10 sec...\n\n')
