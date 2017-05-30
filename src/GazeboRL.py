@@ -7,10 +7,13 @@ import rospy
 from sensor_msgs.msg import Image
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Float64
 
+def init_roscore() :
+	subprocess.Popen(['roscore'])
 
 class GazeboRL :
-	def __init__(self,commands,observationsList=None,publishersList=None):
+	def __init__(self,commands,observationsList=None,publishersList=None, rewardsList=None):
 		'''
 		commands : dictionnary of list of string/commands to apply to subprocess :
 		- launch : 
@@ -34,17 +37,24 @@ class GazeboRL :
 			if (len(pubc) and publishersList is None) or len(pubc) != len(publishersList) :
 				raise ValueError('List of publishers and list of type of data to publish are not accorded.')
 		
+		self.atShudownKill = list()
 		
 		self.commands = commands
 		self.observationsList = observationsList
+		self.rewardsList = rewardsList
 		self.publishersList = publishersList
 		
 		#ARE TO BE COMPUTED FROM THE OBSERVATIONS THREADS :
 		self.observations = []
+		self.observation = None
 		self.rewards = []
+		self.rewards = 0.0
 		self.dones = []
+		self.done = False
 		self.infos = []
+		self.info = None
 		self.actions = []
+		self.action = None
 		
 		self.rMutex = Lock()
 		
@@ -53,6 +63,7 @@ class GazeboRL :
 		for command in self.commands['launch'] :
 			#subprocess.call( command, shell=True )
 			p = subprocess.Popen( command.split())
+			self.atShutdownKill.append(p)
 			
 		#p.wait()
 		print("\n\nGAZEBO RL : ENVIRONMENT : LAUNCHING...\n\n")
@@ -82,40 +93,43 @@ class GazeboRL :
 		
 		return
 		
+	def synchroniseObservationsRewards(self) :
+		#TODO in inheritances...
+		
+		return
 			
 	def step(self,actions) :
 		#TODO :
 		
 		self.rMutex.acquire()
 		
+		self.synchroniseObservationsRewards()
+		
 		#ROSPUB : action
+		self.action = actions
 		self.actions.append(actions)	
 			
-		observation = None
 		if len(self.observations) :
-			observation = self.observations[-1]
-			self.observation = []
+			self.observation = self.observations[-1]
+			self.observations = []
 		
-		reward = None
 		if len(self.rewards) :
-			reward = self.rewards[-1]
+			self.reward = self.rewards[-1]
 			self.rewards = []
 			
-		done = False
 		if len(self.dones) :
-			done = self.dones[-1]
+			self.done = self.dones[-1]
 			self.dones = []
 		
-		info = dict()
 		if len(self.infos) :
-			info = self.infos[-1]
+			self.info = self.infos[-1]
 			self.infos = []
 		
 		self.rMutex.release()
 		
 		self.actionHandling()
 		
-		return observation,reward,done,info
+		return self.observation,self.reward,self.done,self.info
 		
 	
 	def setPause(self,pause=True) :
@@ -144,15 +158,27 @@ class GazeboRL :
 	def close(self) :
 		#TODO :
 		# end services...
-		command = 'pkill roslaunch'
-		subprocess.Popen( command.split())
-		command = 'pkill gzclient'
-		subprocess.Popen( command.split())
-		command = 'pkill gzserver'
-		subprocess.Popen( command.split())
+		for proc in self.atShutdownKill :
+			proc.kill()
+			
+		#command = 'pkill roslaunch'
+		#subprocess.Popen( command.split())
+		#command = 'pkill gzclient'
+		#subprocess.Popen( command.split())
+		#command = 'pkill gzserver'
+		#subprocess.Popen( command.split())
 		print("\n\nGAZEBO RL : ENVIRONMENT : CLOSED.\n\n")
 		return 
 		
+
+
+
+
+
+
+
+
+
 
 
 class Swarm1GazeboRL(GazeboRL) :
@@ -162,6 +188,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		commands = {'launch': None}
 		launchCom = []
 		launchCom.append('roslaunch OPUSim robot1swarm.launch')
+		launchCom.append('python ~/rosbuild_ws/sandbox/GazeboRL/src/reward.py -r 2.0 -v 1.0')
 		#launchCom.append('roslaunch OPUSim robot2swarm.launch')
 		commands['launch'] = launchCom
 		
@@ -183,12 +210,19 @@ class Swarm1GazeboRL(GazeboRL) :
 		publishersList = []
 		publishersList.append('/robot_model_teleop_0/cmd_vel')
 		
+		rewardsList = []
+		rewardsList.append('/RL/reward')
+		
 		
 		self.observationsQueues = dict()
 		for topic in observationsList :
 			self.observationsQueues[topic] = []
 		
-		GazeboRL.__init__(self,commands,observationsList,publishersList)
+		self.rewardsQueues = dict()
+		for topic in rewardsList :
+			self.rewardsQueues[topic] = []
+		
+		GazeboRL.__init__(self,commands,observationsList,publishersList,rewardsList)
 		
 		
 	
@@ -204,6 +238,11 @@ class Swarm1GazeboRL(GazeboRL) :
 		# ODOMETRY :
 		self.subscribers[self.observationsList[1] ] = rospy.Subscriber( self.observationsList[1], self.commands['subs'][1], self.callbackODOMETRY )
 		#print('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
+		
+		#reward :
+		self.subscribers[self.rewardsList[0] ] = rospy.Subscriber( self.rewardsList[0], Float64, self.callbackREWARD )
+		#print('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
+		
 		
 		return
 	
@@ -257,7 +296,36 @@ class Swarm1GazeboRL(GazeboRL) :
 		if self.continuousActions == False :
 			self.publishVELOCITY(self.continuousActions)
 			
+	def synchroniseObservationsRewards(self) :
+		observationItems = list()
+		enoughItem = True
+		for obsBuffer in self.observationsQueues :
+			if len(obsBuffer) :
+				obsItem = obsBuffer[-1]
+				observationItems.append(obsItem)
+			else :
+				enoughItem = False
+				
+		if enoughItem :
+			#erase :
+			for obsBuffer in self.observationsQueues :
+				obsBuffer = []
+			#forward for the distribution :
+			self.observations.append(observationItems)
 		
+		#deal with the reward(s) :	
+		rewardItems = list()
+		for rewardsBuffer in self.rewardsQueues :
+			if len(rewardsBuffer) :
+				rewardItem = rewardsBuffer[-1]
+				rewardItems.append(rewardItem)
+				rewardsBuffer = []
+				#TODO handle the case when there is multiple rewards...
+			
+		if len(rewardItems):
+			self.rewards.append(rewardItems)
+			
+			
 			
 	def callbackODOMETRY(self, odom ) :
 		self.rMutex.acquire()
@@ -267,10 +335,18 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.rMutex.release()
 		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: ODOMETRY')
 	
+	def callbackREWARD(self, r ) :
+		self.rMutex.acquire()
+		
+		self.rewardsQueues[self.rewardsList[0]].append( r)
+		
+		self.rMutex.release()
+		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: ODOMETRY')
+	
 	
 	def callbackOMNIVIEW(self, omniview ) :
 		self.rMutex.acquire()
-		
+		#print(omniview)
 		self.observationsQueues[self.observationsList[0]].append( omniview)
 		
 		self.rMutex.release()

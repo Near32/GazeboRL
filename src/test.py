@@ -1,4 +1,4 @@
-from GazeboRL import GazeboRL, Swarm1GazeboRL
+from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
 import time
 import rospy
 
@@ -16,6 +16,7 @@ import rospy
 
 #env = GazeboRL(commands)
 
+#init_roscore()
 
 env = Swarm1GazeboRL()
 
