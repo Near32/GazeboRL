@@ -10,9 +10,8 @@ imgch = 3
 
 
 imgh_r = 240
-imgw_r = 1280
-
-#imgw_r = 640
+#imgw_r = 1280
+imgw_r = 640
 
 
 INPUT_SHAPE = (imgh,imgw,imgch)

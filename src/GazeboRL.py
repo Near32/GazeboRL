@@ -107,7 +107,7 @@ class GazeboRL :
 		
 		#ROSPUB : action
 		self.action = actions
-		self.actions.append(actions)	
+		self.actions.append(self.action)	
 			
 		if len(self.observations) :
 			self.observation = self.observations[-1]

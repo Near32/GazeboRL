@@ -29,11 +29,14 @@ def BNlayer(x, is_training, scope):
 class NN :
 	def __init__(self,filepath_base,nbrinput,nbroutput,lr,filepathin=None) :
 		  self.filepathin = filepathin
-		  #build_modelMINI
-		  #self.filepath = filepath_base+'archiYOLO_'+str(nbrinput[0])+'_'+str(nbrinput[1])+'--'
+		  	
+		  if useMINI == False :
+		  	#build_modelMINI
+		  	self.filepath = filepath_base+'archiYOLO_'+str(nbrinput[0])+'_'+str(nbrinput[1])+'--'
+		  else :
+		  	#build_modelMINI1
+		  	self.filepath = filepath_base+'archiMINI1_'+str(nbrinput[0])+'_'+str(nbrinput[1])+'--'
 		  
-		  #build_modelMINI1
-		  self.filepath = filepath_base+'archiYOLO1_'+str(nbrinput[0])+'_'+str(nbrinput[1])+'--'
 		  self.filepath = self.filepath + str(nbroutput) + '-'+str(lr)
 		  
 		  self.lr = lr
@@ -811,9 +814,10 @@ class NN :
 		# CONV LAYER 1 :
 		shape_input = self.x_tensor.get_shape().as_list()
 		input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-		nbr_filter1 = 24
+		nbr_filter1 = 32
 		output_dim1 = [ nbr_filter1]
-		relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=self.x_tensor, input_dim=input_dim1, output_dim=output_dim1, phase=self.phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
+		#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=self.x_tensor, input_dim=input_dim1, output_dim=output_dim1, phase=self.phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=8, stride=4, pooldim=2, poolstride=2)
+		relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=self.x_tensor, input_dim=input_dim1, output_dim=output_dim1, phase=self.phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=8, stride=4,padding='SAME')
 		rmpc1_do = tf.nn.dropout(relumaxpoolconv1,self.keep_prob)
 		
 		#LAYER STN 1 :
@@ -827,10 +831,10 @@ class NN :
 		#input_dim2 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
 		# CONV LAYER 2 :
-		nbr_filter2 = 36
+		nbr_filter2 = 64
 		output_dim2 = [ nbr_filter2]
 		#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=h_trans_def1, input_dim=input_dim2, output_dim=output_dim2, phase=self.phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-		relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=self.phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
+		relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=self.phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=4, stride=2, padding='SAME')
 		rmpc2_do = tf.nn.dropout(relumaxpoolconv2,self.keep_prob)
 		
 		#LAYER STN 2 :
@@ -842,7 +846,7 @@ class NN :
 		#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
 		# CONV LAYER 3 :
-		nbr_filter3 = 48
+		nbr_filter3 = 64
 		output_dim3 = [ nbr_filter3]
 		relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=self.phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
 		rmpc3_do = tf.nn.dropout(relumaxpoolconv3,self.keep_prob)
@@ -855,6 +859,7 @@ class NN :
 		#shape_input = h_trans_def3.get_shape().as_list()
 		#input_dim4 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
+		'''
 		# CONV LAYER 4 :
 		nbr_filter4 = 128
 		output_dim4 = [ nbr_filter4]
@@ -882,7 +887,7 @@ class NN :
 		relumaxpoolconv5, input_dim6 = self.layer_conv2dBNAct(input_tensor=rmpc4_do, input_dim=input_dim5, output_dim=output_dim5, phase=self.phase, layer_name='conv4', act=tf.nn.relu, filter_size=3, stride=1,padding='VALID')
 		rmpc5_do = tf.nn.dropout(relumaxpoolconv5,self.keep_prob)
 		
-		'''
+		
 		# CONV LAYER 6 :
 		nbr_filter6 = 128
 		output_dim6 = [ nbr_filter6]
@@ -991,25 +996,20 @@ class NN :
 		'''
 		
 		
-		#shape_conv = rmpc20_do.get_shape().as_list()
-		shape_conv = rmpc5_do.get_shape().as_list()
+		last_conv = rmpc3_do
+		shape_conv = last_conv.get_shape().as_list()
 		
 		#shape_conv = rmpc5_do.get_shape().as_list()
 		#shape_conv = h_trans_def4.get_shape().as_list()
 		
 		shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
-		out1 = 1024
-		#fc_x_input = tf.reshape( relumaxpoolconv2, shape_fc )
-		#fc_x_input = tf.reshape( relumaxpoolconv3, shape_fc )
-		#fc_x_input = tf.reshape( relumaxpoolconv4, shape_fc )
-		
-		fc_x_input = tf.reshape( rmpc5_do, shape_fc )
-		#fc_x_input = tf.reshape( rmpc20_do, shape_fc )
+		out1 = 512
+		fc_x_input = tf.reshape( last_conv, shape_fc )
 		hidden1 = self.nn_layerBN(fc_x_input, shape_fc[1], out1, self.phase, 'layer1')
 		dropped1 = tf.nn.dropout(hidden1, self.keep_prob)
 	
 		
-		out2 = 256
+		out2 = 64
 		hidden2 = self.nn_layerBN(dropped1, out1, out2, self.phase,'layer2')
 		dropped2 = tf.nn.dropout(hidden2, self.keep_prob)
 
@@ -1172,15 +1172,15 @@ def main() :
 	#parser.add_argument('-d', help='data directory', dest='data_dir', type=str, default='./datasets/dataset1Robot.ImagesCmdsOdoms.npz')
 	parser.add_argument('-d', help='data directory', dest='data_dir', type=str, default='/home/kevin/rosbuild_ws/sandbox/GazeboRL/images')
 	parser.add_argument('-t', help='test size fraction',    dest='test_size',         type=float, default=0.2)
-	parser.add_argument('-k', help='drop out probability',  dest='keep_prob',         type=float, default=0.5)
+	parser.add_argument('-k', help='drop out probability',  dest='keep_prob',         type=float, default=0.2)
 	parser.add_argument('-n', help='number of epochs',      dest='nb_epoch',          type=int,   default=100)
-	parser.add_argument('-s', help='samples per epoch',     dest='samples_per_epoch', type=int,   default=50)
+	parser.add_argument('-s', help='samples per epoch',     dest='samples_per_epoch', type=int,   default=100)
 	if useMINI :
-		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=4)
+		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=32)
 	else :
 		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=12)
 	parser.add_argument('-o', help='save best models only', dest='save_best_only',    type=s2b,   default='true')
-	parser.add_argument('-l', help='learning rate',         dest='learning_rate',     type=float, default=1.0e-2)
+	parser.add_argument('-l', help='learning rate',         dest='learning_rate',     type=float, default=5.0e-4)
 	args = parser.parse_args()
 	
 	#print parameters
@@ -1199,10 +1199,10 @@ def main() :
 	
 	#modelYOLO1
 	#240x1280
-	filepathIn = None#'./logs/archiYOLO1_240_1280--2-0.01.ckpt'
+	#filepathIn = None#'./logs/archiYOLO1_240_1280--2-0.01.ckpt'
 	
 	#240x640
-	#filepathIn = './logs/archiYOLO1_240_1280--2-0.005.ckpt'
+	filepathIn =  './logs/archiMINI1_240_640--2-0.002.ckpt'
 	
 	
 	
@@ -1210,8 +1210,9 @@ def main() :
 		train_model(model, args, dataset,filepathIn=filepathIn)
 	else :
 		testbatchx, testbatchy = dataset.batch_generator(batch_size=10, is_training=False)
-		model.inference(x=testbatchx)
+		output = model.inference(x=testbatchx)
 		print('desired output :', testbatchy)
+		print('error :', output-testbatchy)
 	
 if __name__ == '__main__' :
 	main()
