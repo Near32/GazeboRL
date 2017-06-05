@@ -1,22 +1,63 @@
 import numpy as np
-from utils import INPUT_SHAPE_R, Dataset
-import argparse
 import tensorflow as tf
+import cv2
+
+imgh = 240
+imgw = 1280
+imgch = 3
 
 
+imgh_r = 240
+#imgw_r = 1280
+imgw_r = 640
 
-nbrinput = INPUT_SHAPE_R
-nbroutput = 2
-filepath_base = './logs/'
-dropoutK = 0.5
-batch_size = 1024
+
+INPUT_SHAPE = (imgh,imgw,imgch)
+
+INPUT_SHAPE_R = [imgh_r,imgw_r,imgch]
 
 useMINI = True
 
 
-def load_dataset(args) :
-	dataset = Dataset(args.data_dir)
-	return dataset
+def resize(image, imghr, imgwr) :
+	dst = cv2.resize( np.array(image), (imgwr,imghr)) #, cv2.INTER_AREA)
+	return dst
+	
+def rgb2yuv(image) :
+	return cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
+	
+def preprocess(image, imghr, imgwr) :
+	img = resize(image, imghr, imgwr)
+	image = rgb2yuv(img)
+	image = np.array(image)*1.0/127.5
+	image -= 1.0
+	#plt.imshow(image)
+	#plt.show()
+	return image
+	
+def random_shadow(image) :
+	x1, y1 = imgw * np.random.rand(), 0
+	x2, y2 = imgw * np.random.rand(), imgh
+	xm, ym = np.mgrid[0:imgh,0:imgw]
+	
+	mask = np.zeros_like(image[:,:,1])
+	mask[(ym-y1)*(x2-x1)-(y2-y1)*(xm-x1)>0] = 1
+	
+	cond = mask==np.random.randint(2)
+	s_ratio = np.random.uniform(low=0.2, high=0.5)
+	
+	hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
+	hls[:,:,1][cond] = hls[:,:,1][cond]*s_ratio
+	
+	return cv2.cvtColor(hls, cv2.COLOR_HLS2RGB)
+	
+def random_brightness(image):
+    # HSV (Hue, Saturation, Value) is also called HSB ('B' for Brightness).
+    hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    ratio = 1.0 + 0.4 * (np.random.rand() - 0.5)
+    hsv[:,:,2] =  hsv[:,:,2] * ratio
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+
 
 
 def BNlayer(x, is_training, scope):
@@ -1111,24 +1152,26 @@ class NN :
 		      # Save the variables to disk.
 		      save_path = self.saver.save(self.sess, self.filepath)
 		      print("Model saved in file: %s" % save_path)
-		  
-	def inference(self,x):
+	
+	def init(self):
 		if not(self.sessionInitialized) :
 			self.sess = tf.Session()
 			self.sessionInitialized = True
 			self.init_op = tf.global_variables_initializer()
-		  self.sess.run(self.init_op)
-		  # Add ops to save and restore all the variables.
-		  self.saver = tf.train.Saver()
-		  # START FROM THE MODEL PRE TRAINED :
-		  self.saver.restore(self.sess, self.filepath+'.ckpt')
-    
-    outputs = self.sess.run([self.y], feed_dict={self.x: x, self.keep_prob: 0.5, self.phase: False})
-    print('INFERENCE : y:')
-    print(outputs)
-    
+			self.sess.run(self.init_op)
+			# Add ops to save and restore all the variables.
+			self.saver = tf.train.Saver()
+			# START FROM THE MODEL PRE TRAINED :
+			self.saver.restore(self.sess, self.filepath+'.ckpt')
+			
+	def inference(self,x):		
+		x = preprocess(x,imgh_r,imgw_r)
+		x = x.reshape((-1,x.shape[0]*x.shape[1]*x.shape[2]))
+		outputs = self.sess.run([self.y], feed_dict={self.x: x, self.keep_prob: 0.5, self.phase: False})
+		#print('INFERENCE : y:')
+		#print(outputs)
 		return outputs
-		        
+				    
 	
 	def feed_dict(self,train, iteration=0):
 		  """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
@@ -1142,85 +1185,6 @@ class NN :
 		  return {self.x: xs, self.y_: ys, self.keep_prob: k, self.phase: train}
 
 
-	
-def build_model(args) :
-	#model = Sequential()
-	#model.add(Lambda(lambda x: x/127.5-1.0, input_shape=INPUT_SHAPE))
-	#model.add(Conv2D(24, 5, 5, activation='elu', subsample=(2, 2)))
-	#model.add(Conv2D(36, 5, 5, activation='elu', subsample=(2, 2)))
-	#model.add(Conv2D(48, 5, 5, activation='elu', subsample=(2, 2)))
-	#model.add(Conv2D(64, 3, 3, activation='elu'))
-	#model.add(Conv2D(64, 3, 3, activation='elu'))
-	#model.add(Dropout(args.keep_prob))
-	#model.add(Flatten())
-	#model.add(Dense(100, activation='elu'))
-	#model.add(Dense(50, activation='elu'))
-	#model.add(Dense(10, activation='elu'))
-	#model.add(Dense(2))
-	#model.summary()
-	
-	model = NN( filepath_base,nbrinput=nbrinput,nbroutput=nbroutput,lr=args.learning_rate,filepathin=None)
-	return model
-
-def train_model(model,args,dataset,filepathIn=None) :
-	model.train(args, dataset, filepathIn=filepathIn)
-
-
-def s2b(s) :
-	s = s.lower()
-	return s=='true' or s=='yes'
-	
-def main() :
-	parser = argparse.ArgumentParser(description='Behavioral Cloning Training Program')
-	#parser.add_argument('-d', help='data directory', dest='data_dir', type=str, default='./datasets/dataset1Robot.ImagesCmdsOdoms.npz')
-	parser.add_argument('-d', help='data directory', dest='data_dir', type=str, default='/home/kevin/rosbuild_ws/sandbox/GazeboRL/images')
-	parser.add_argument('-t', help='test size fraction',    dest='test_size',         type=float, default=0.2)
-	parser.add_argument('-k', help='drop out probability',  dest='keep_prob',         type=float, default=0.2)
-	parser.add_argument('-n', help='number of epochs',      dest='nb_epoch',          type=int,   default=100)
-	parser.add_argument('-s', help='samples per epoch',     dest='samples_per_epoch', type=int,   default=100)
-	if useMINI :
-		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=32)
-	else :
-		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=12)
-	parser.add_argument('-o', help='save best models only', dest='save_best_only',    type=s2b,   default='true')
-	parser.add_argument('-l', help='learning rate',         dest='learning_rate',     type=float, default=5.0e-4)
-	args = parser.parse_args()
-	
-	#print parameters
-	print('-' * 30)
-	print('Parameters')
-	print('-' * 30)
-	for key, value in vars(args).items():
-		  print('{:<20} := {}'.format(key, value))
-	print('-' * 30)
-	
-	dropoutK = args.keep_prob
-	
-	dataset = load_dataset(args)
-	model = build_model(args)
-	train = True
-	
-	#modelYOLO1
-	#240x1280
-	#filepathIn = None#'./logs/archiYOLO1_240_1280--2-0.01.ckpt'
-	
-	#240x640
-	filepathIn =  './logs/archiMINI1_240_640--2-0.002.ckpt'
-	
-	
-	
-	if train :
-		train_model(model, args, dataset,filepathIn=filepathIn)
-	else :
-		testbatchx, testbatchy = dataset.batch_generator(batch_size=10, is_training=False)
-		output = model.inference(x=testbatchx)
-		print('desired output :', testbatchy)
-		print('error :', output-testbatchy)
-	
-if __name__ == '__main__' :
-	main()
-	
-	
 
 												
 

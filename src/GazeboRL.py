@@ -37,7 +37,7 @@ class GazeboRL :
 			if (len(pubc) and publishersList is None) or len(pubc) != len(publishersList) :
 				raise ValueError('List of publishers and list of type of data to publish are not accorded.')
 		
-		self.atShudownKill = list()
+		self.atShutdownKill = list()
 		
 		self.commands = commands
 		self.observationsList = observationsList
@@ -48,7 +48,7 @@ class GazeboRL :
 		self.observations = []
 		self.observation = None
 		self.rewards = []
-		self.rewards = 0.0
+		self.reward = 0.0
 		self.dones = []
 		self.done = False
 		self.infos = []
@@ -66,7 +66,7 @@ class GazeboRL :
 			self.atShutdownKill.append(p)
 			
 		#p.wait()
-		print("\n\nGAZEBO RL : ENVIRONMENT : LAUNCHING...\n\n")
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : LAUNCHING...\n")
 	
 		
 		self.subscribtions()
@@ -135,10 +135,10 @@ class GazeboRL :
 	def setPause(self,pause=True) :
 		if pause==True :
 			subprocess.Popen(['rosservice', 'call', '/gazebo/pause_physics'])
-			print("\n\nGAZEBO RL : ENVIRONMENT PHYSICS : PAUSED.\n\n")
+			rospy.loginfo("\nGAZEBO RL : ENVIRONMENT PHYSICS : PAUSED.\n")
 		else :
 			subprocess.Popen(['rosservice', 'call', '/gazebo/unpause_physics'])
-			print("\n\nGAZEBO RL : ENVIRONMENT PHYSICS : UNPAUSED.\n\n")
+			rospy.loginfo("\nGAZEBO RL : ENVIRONMENT PHYSICS : UNPAUSED.\n")
 	
 	
 	def reset(self) :
@@ -148,7 +148,7 @@ class GazeboRL :
 		time.sleep(1)
 		
 		subprocess.Popen(['rosservice', 'call', '/gazebo/reset_world'])
-		print("\n\nGAZEBO RL : ENVIRONMENT : RESET.\n\n")
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : RESET.\n")
 		time.sleep(1)
 		
 		self.setPause(False)
@@ -158,16 +158,16 @@ class GazeboRL :
 	def close(self) :
 		#TODO :
 		# end services...
-		for proc in self.atShutdownKill :
-			proc.kill()
+		#for proc in self.atShutdownKill :
+		#	proc.kill()
 			
-		#command = 'pkill roslaunch'
-		#subprocess.Popen( command.split())
-		#command = 'pkill gzclient'
-		#subprocess.Popen( command.split())
-		#command = 'pkill gzserver'
-		#subprocess.Popen( command.split())
-		print("\n\nGAZEBO RL : ENVIRONMENT : CLOSED.\n\n")
+		command = 'pkill roslaunch'
+		subprocess.Popen( command.split())
+		command = 'pkill gzclient'
+		subprocess.Popen( command.split())
+		command = 'pkill gzserver'
+		subprocess.Popen( command.split())
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : CLOSED.\n")
 		return 
 		
 
@@ -188,7 +188,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		commands = {'launch': None}
 		launchCom = []
 		launchCom.append('roslaunch OPUSim robot1swarm.launch')
-		launchCom.append('python ~/rosbuild_ws/sandbox/GazeboRL/src/reward.py -r 2.0 -v 1.0')
+		#launchCom.append('python /rosbuild_ws/sandbox/GazeboRL/src/reward.py -r 2.0 -v 1.0')
 		#launchCom.append('roslaunch OPUSim robot2swarm.launch')
 		commands['launch'] = launchCom
 		
@@ -233,15 +233,15 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.subscribers = dict()
 		# OMNIVIEW :
 		self.subscribers[self.observationsList[0] ] = rospy.Subscriber( self.observationsList[0], self.commands['subs'][0], self.callbackOMNIVIEW )
-		#print('{} :: {}'.format(self.observationsList[0], self.commands['subs'][0]) )
+		#rospy.loginfo('{} :: {}'.format(self.observationsList[0], self.commands['subs'][0]) )
 		
 		# ODOMETRY :
 		self.subscribers[self.observationsList[1] ] = rospy.Subscriber( self.observationsList[1], self.commands['subs'][1], self.callbackODOMETRY )
-		#print('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
+		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		#reward :
 		self.subscribers[self.rewardsList[0] ] = rospy.Subscriber( self.rewardsList[0], Float64, self.callbackREWARD )
-		#print('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
+		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		
 		return
@@ -276,7 +276,7 @@ class Swarm1GazeboRL(GazeboRL) :
 			
 					self.publishers[self.publishersList[0]].publish( twistmsg )
 					self.pub_rates[self.publishersList[0]].sleep()
-					rospy.loginfo('DEBUG :: GazeboRL :: Published a twist message...')
+					#rospy.loginfo('DEBUG :: GazeboRL :: Published a twist message...')
 		else :
 			action = [0,0]
 	
@@ -287,7 +287,8 @@ class Swarm1GazeboRL(GazeboRL) :
 			twistmsg.angular.z = action[1]
 	
 			self.publishers[self.publishersList[0]].publish( twistmsg )
-			rospy.loginfo('DEBUG :: GazeboRL :: Published a twist message...')
+			#rospy.loginfo('DEBUG :: GazeboRL :: Published a twist message:')
+			#rospy.loginfo(action)
 				
 				
 		return
@@ -297,29 +298,33 @@ class Swarm1GazeboRL(GazeboRL) :
 			self.publishVELOCITY(self.continuousActions)
 			
 	def synchroniseObservationsRewards(self) :
-		observationItems = list()
+		observationItems = dict()
 		enoughItem = True
-		for obsBuffer in self.observationsQueues :
-			if len(obsBuffer) :
-				obsItem = obsBuffer[-1]
-				observationItems.append(obsItem)
+		for topic in self.observationsQueues.keys() :
+			if len(self.observationsQueues[topic]):
+				#rospy.loginfo('DEBUG:'+topic)
+				#rospy.loginfo(self.observationsQueues[topic])
+				obsItem = self.observationsQueues[topic][-1]
+				observationItems[topic]=obsItem
 			else :
 				enoughItem = False
 				
 		if enoughItem :
 			#erase :
-			for obsBuffer in self.observationsQueues :
-				obsBuffer = []
+			for topic in self.observationsQueues :
+				self.observationsQueues[topic] = []
 			#forward for the distribution :
 			self.observations.append(observationItems)
 		
 		#deal with the reward(s) :	
-		rewardItems = list()
-		for rewardsBuffer in self.rewardsQueues :
-			if len(rewardsBuffer) :
-				rewardItem = rewardsBuffer[-1]
-				rewardItems.append(rewardItem)
-				rewardsBuffer = []
+		rewardItems = dict()
+		for topic in self.rewardsQueues.keys() :
+			if len(self.rewardsQueues[topic]):
+				#rospy.loginfo('DEBUG:reward:'+topic)
+				#rospy.loginfo(self.rewardsQueues[topic][-1])
+				rewardItem = self.rewardsQueues[topic][-1]
+				rewardItems[topic] = rewardItem
+				self.rewardsQueues[topic] = []
 				#TODO handle the case when there is multiple rewards...
 			
 		if len(rewardItems):
@@ -346,7 +351,7 @@ class Swarm1GazeboRL(GazeboRL) :
 	
 	def callbackOMNIVIEW(self, omniview ) :
 		self.rMutex.acquire()
-		#print(omniview)
+		#rospy.loginfo(omniview)
 		self.observationsQueues[self.observationsList[0]].append( omniview)
 		
 		self.rMutex.release()

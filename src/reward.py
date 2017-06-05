@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import numpy as np
 import rospy
 import time
@@ -11,7 +13,10 @@ parser = argparse.ArgumentParser(description="Reward node for RL framework")
 parser.add_argument('-r', help='radius distance from the target', dest='radius', type=float, default=2.0)
 parser.add_argument('-v', help='rotational velocity around the target', dest='velocity', type=float, default=1.0)
 
-args = parser.parse_args()
+args, unknown = parser.parse_known_args()
+
+print(args)
+print(unknown)
 
 buffodom = list()
 def callbackODOMETRY(odom) :
@@ -30,7 +35,7 @@ subODOM = rospy.Subscriber( '/robot_model_teleop_0/odom_diffdrive', Odometry, ca
 pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
 
 
-rate = rospy.Rate(50)
+rate = rospy.Rate(20)
 
 todom = None
 tr = Float64()
@@ -43,7 +48,7 @@ while continuer :
 		del buffodom[:]
 		
 		#gather information :
-		cp = todom.pose.pose
+		cp = todom.pose.pose.position
 		ct = todom.twist.twist
 		
 		#let us compute the rewards to publish :
@@ -55,6 +60,8 @@ while continuer :
 		
 	if tr is not None :
 		pubR.publish(tr)
-		
-	rate.sleep()
+	
+	if continuer :	
+		rate.sleep()
+
 
