@@ -8,31 +8,74 @@
 import threading
 import multiprocessing
 import numpy as np
-import gym
+from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
+import time
+import rospy
+from Agent1 import NN, INPUT_SHAPE_R
+import cv2
+import numpy as np
+from cv_bridge import CvBridge
+bridge = CvBridge()
 
-env = gym.make('Pong-v0')
+def ros2np(img) :
+	return bridge.imgmsg_to_cv2(img, "bgr8")
+
+
+nbrinput = INPUT_SHAPE_R
+nbroutput = 2
+filepath_base = './logs/'
+dropoutK = 0.5
+batch_size = 1024 
+lr = 5.0e-4
+def initAgent():		
+	model = NN( filepath_base,nbrinput=nbrinput,nbroutput=nbroutput,lr=lr,filepathin=None)
+	model.init()
+	return model
+	
+
+#env = gym.make('Pong-v0')
+
+env = Swarm1GazeboRL()
+env.make()
+agent = initAgent()
+print('\n\nwait for 5 sec...\n\n')
+time.sleep(5)
+env.setPause(False)
+
 env.reset()
-it = 0
-actions = []
-while it < 2 :
-	it+=2
-	
-	#env.render()
-	action = env.action_space.sample()
-	obs, r, done, info = env.step(action)
-	actions.append(action)
-	#print(action)	
-	print(np.max(np.array(actions)))
-	#print(obs.shape)
-	#print(r,done,info)
-	
-	if done :
-		it+=1
-		env.reset()
 
-#env.close()	
+action = [0.0,0.0]
 
-#raise
+meantime = 0.0
+i=1000
+while i :
+	output = env.step(action)
+	rospy.loginfo(output[1:])
+	if output[0] is not None :
+		for topic in output[0].keys() :
+			if 'OMNIVIEW' in topic :
+				img = np.array(ros2np(output[0][topic]))
+				cv2.imshow('image',img)
+				cv2.waitKey(1)
+				start = time.time()
+				try :
+					action = agent.inference(x=img)[0][0]
+				except Exception as e :
+					rospy.loginfo('error occurred..'+str(e))
+					action = [0.0,0.0]
+				elapsed = time.time()-start
+				meantime+=elapsed
+				rospy.loginfo('elt:'+str(elapsed)+'::action : ')
+				rospy.loginfo(action)
+	i-=1
+	time.sleep(0.1)
+
+rospy.loginfo('MEAN COMPUTATION TIME :'+str(meantime/1000.0))
+#0.011085 seconds == 90Hz
+
+cv2.destroyAllWindows()
+
+env.close()
 
 
 show = False
@@ -65,7 +108,7 @@ def update_target_graph(from_scope,to_scope):
 
 # Processes Doom screen image to produce cropped and resized image. 
 def process_frame(frame):
-	s = frame[10:-10,30:-30]
+	#s = frame[10:-10,30:-30]
 	s = scipy.misc.imresize(s,[84,84])
 	s = np.reshape(s,[np.prod(s.shape)]) / 255.0
 	return s
@@ -122,30 +165,40 @@ class AC_Network():
             rnn_out = tf.reshape(lstm_outputs, [-1, h_size])
             
             #Output layers for policy and value estimations
-            self.policy = slim.fully_connected(rnn_out,a_size,
-                activation_fn=tf.nn.softmax,
+            self.policy = slim.fully_connected(rnn_out,
+            		a_size,
+                activation_fn=None,#tf.nn.softmax,
                 weights_initializer=normalized_columns_initializer(0.01),
                 biases_initializer=None)
-            self.value = slim.fully_connected(rnn_out,1,
+            self.Vvalue = slim.fully_connected(rnn_out,1,
                 activation_fn=None,
                 weights_initializer=normalized_columns_initializer(1.0),
                 biases_initializer=None)
+            
+            #self.actions = tf.placeholder(shape=[None,a_size],dtype=tf.float32)
+            actionadvantage = slim.fully_connected(self.policy, 
+            		10*a_size,
+            		activation_fn=None,
+            		weights_initializer=normalized_columns_initializer(0.01),
+            		biases_initializer=None)
+            self.Qvalue = slim.fully_connected(actionadvantage+self.Vvalue,
+            		1,
+            		activation_fn=None,
+            		weights_initializer=normalized_columns_initializer(0.01),
+            		biases_initializer=None)
             #print(self.value.get_shape().as_list())
             #Only the worker network need ops for loss functions and gradient updating.
             if scope != 'global':
-                self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
-                self.actions_onehot = tf.one_hot(self.actions,a_size,dtype=tf.float32)
-                self.target_v = tf.placeholder(shape=[None],dtype=tf.float32)
-                self.advantages = tf.placeholder(shape=[None],dtype=tf.float32)
-
-                self.responsible_outputs = tf.reduce_sum(self.policy * self.actions_onehot, [1])
-
-                #Loss functions
-                vreshaped = tf.reshape(self.value,[-1])
-                self.value_loss = 0.5 * tf.reduce_sum(tf.square(self.target_v - vreshaped))
+                self.target_qvalue = tf.placeholder(shape=[None],dtype=tf.float32)
+                
+                #Gradients :
+                qreshaped = tf.reshape(self.Qvalue,[-1])
+                self.Qvalue_loss = 0.5 * tf.reduce_sum(tf.square(self.target_qvalue - qreshaped))
                 self.entropy = - tf.reduce_sum(self.policy * tf.log(self.policy))
-                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
-                self.loss = 0.5 * self.value_loss + self.policy_loss - self.entropy * 0.01
+                #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
+                #self.loss = 0.5 * self.value_loss + self.policy_loss - self.entropy * 0.01
+                self.policy_loss = -tf.reduce_sum(self.Qvalue)
+                self.loss = 0.5 * self.Qvalue_loss + self.policy_loss - self.entropy * 0.01
 
                 #Get gradients from local network using local losses
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
@@ -179,32 +232,8 @@ class Worker():
         self.local_AC = AC_Network(imagesize,s_size,h_size,a_size,self.name,trainer)
         self.update_local_ops = update_target_graph('global',self.name)        
         
-        #The Below code is related to setting up the Doom environment
-        #game.set_doom_scenario_path("basic.wad") #This corresponds to the simple task we will pose our agent
-        #game.set_doom_map("map01")
-        #game.set_screen_resolution(ScreenResolution.RES_160X120)
-        #game.set_screen_format(ScreenFormat.GRAY8)
-        #game.set_render_hud(False)
-        #game.set_render_crosshair(False)
-        #game.set_render_weapon(True)
-        #game.set_render_decals(False)
-        #game.set_render_particles(False)
-        #game.add_available_button(Button.MOVE_LEFT)
-        #game.add_available_button(Button.MOVE_RIGHT)
-        #game.add_available_button(Button.ATTACK)
-        #game.add_available_game_variable(GameVariable.AMMO2)
-        #game.add_available_game_variable(GameVariable.POSITION_X)
-        #game.add_available_game_variable(GameVariable.POSITION_Y)
-        #game.set_episode_timeout(300)
-        #game.set_episode_start_time(10)
-        #game.set_window_visible(False)
-        #game.set_sound_enabled(False)
-        #game.set_living_reward(-1)
-        #game.set_mode(Mode.PLAYER)
-        #game.init()
-        
-        self.actions = self.actions = np.identity(a_size,dtype=bool).tolist()
-        #End Doom set-up
+        #self.actions = self.actions = np.identity(a_size,dtype=bool).tolist()
+        self.actions = np.identity(a_size,dtype-np.float32).tolist()
         self.env = game
         
     def train(self,rollout,sess,gamma,bootstrap_value):
@@ -277,18 +306,10 @@ class Worker():
                         self.local_AC.state_in[1]:rnn_state[1]})
                     a = np.random.choice(a_dist[0],p=a_dist[0])
                     a = np.argmax(a_dist == a)
-
-                    #r = self.env.make_action(self.actions[a]) / 100.0
-                    #d = self.env.is_episode_finished()
-                    #if self.number == 0 :
-                        #self.env.render()
-                        #print('action = {}'.format(a))
-                    #s1, r, d, _ = self.env.step(self.actions[a])
+                    
                     s1, r, d, _ = self.env.step(a)
-                    #r /= 100.0
                     
                     if d == False:
-                        #s1 = self.env.get_state().screen_buffer
                         episode_frames.append(s1)
                         s1 = process_frame(s1)
                     else:
@@ -362,15 +383,14 @@ class Worker():
 
 max_episode_length = 300
 gamma = .99 # discount rate for advantage estimation and reward discounting
-imagesize = [84,84,3]
+#imagesize = [84,84,3]
+imagesize = [120,320,3]
 s_size = imagesize[0]*imagesize[1]*imagesize[2] #21168 # Observations are greyscale frames of 84 * 84 * 1
 h_size = 256
 a_size = 6 #3 # Agent can move Left, Right, or Fire
-model_path = './model-RL3-Pong'
-num_workers = 16
+model_path = './model-RL3-GazeboRL-robot1swarm'
+num_workers = 1
 lr=1e-2
-
-# In[36]:
 
 import os
 
@@ -383,8 +403,8 @@ if not os.path.exists(model_path):
 if not os.path.exists('./frames'):
     os.makedirs('./frames')
 
-with tf.device("/cpu:0"): 
-#with tf.device("/gpu:0"): 
+#with tf.device("/cpu:0"): 
+with tf.device("/gpu:0"): 
     global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
     trainer = tf.train.AdamOptimizer(learning_rate=lr)
     master_network = AC_Network(imagesize,s_size,h_size,a_size,'global',None) # Generate global network
@@ -392,7 +412,9 @@ with tf.device("/cpu:0"):
     workers = []
     # Create worker classes
     for i in range(num_workers):
-        game = gym.make('Pong-v0')
+        #game = gym.make('Pong-v0')
+        game = Swarm1GazeboRL()
+        game.make()
         workers.append(Worker(game,i,imagesize,s_size,h_size,a_size,trainer,model_path,global_episodes))
     saver = tf.train.Saver(max_to_keep=5)
 
@@ -415,9 +437,4 @@ with tf.Session() as sess:
         sleep(0.5)
         worker_threads.append(t)
     coord.join(worker_threads)
-
-
-# In[ ]:
-
-
 
