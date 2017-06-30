@@ -1,5 +1,6 @@
 import subprocess
 import threading
+#import thread
 from threading import Lock
 import time
 import rospy
@@ -27,12 +28,14 @@ class GazeboRL :
 		rospy.init_node('GazeboRL_node', anonymous=False)
 		rospy.on_shutdown(self.close)
 		
-		if commands.has_key('subs') :
+		#if commands.has_key('subs') :
+		if 'subs' in commands :
 			subc = commands['subs']
 			if (len(subc) and observationsList is None) or len(subc) != len(observationsList) :
 				raise ValueError('List of observations and subscribtions are not accorded.')
 		
-		if commands.has_key('pubs') :
+		#if commands.has_key('pubs') :
+		if 'pubs' in commands :
 			pubc = commands['pubs']
 			if (len(pubc) and publishersList is None) or len(pubc) != len(publishersList) :
 				raise ValueError('List of publishers and list of type of data to publish are not accorded.')
@@ -257,7 +260,8 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.pub_bools[self.publishersList[0]] = True
 		self.pub_rates[self.publishersList[0]] = rospy.Rate(1)
 		#self.pub_threads[self.publishersList[0]] = thread.start_new_thread ( Swarm1GazeboRL.publishVELOCITY, (self,self.continuousActions) )
-		self.pub_threads[self.publishersList[0]] = threading.start_new_thread ( Swarm1GazeboRL.publishVELOCITY, (self,self.continuousActions) )
+		self.pub_threads[self.publishersList[0]] = threading.Thread( target=Swarm1GazeboRL.publishVELOCITY, args=(self,self.continuousActions) )
+		self.pub_threads[self.publishersList[0]].start()
 		
 		return
 	

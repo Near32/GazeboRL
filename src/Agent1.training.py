@@ -1,63 +1,75 @@
 # # Reinforcement Learning : DDPG-A2C
 ## TODO : implement the target network trick ?
 
+useGAZEBO = True
 
 import threading
 import multiprocessing
 import numpy as np
-from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
-import time
-import rospy
-from Agent1 import NN, INPUT_SHAPE_R
+
+if useGAZEBO :
+	from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
+	import time
+	import rospy
+	from Agent1 import NN, INPUT_SHAPE_R, resize, rgb2yuv
+	from cv_bridge import CvBridge
+	bridge = CvBridge()
+
+	def ros2np(img) :
+		return bridge.imgmsg_to_cv2(img, "bgr8")
+else :
+	import gym
+
 import cv2
 import os
 import numpy as np
-from cv_bridge import CvBridge
-
-bridge = CvBridge()
-def ros2np(img) :
-	return bridge.imgmsg_to_cv2(img, "bgr8")
 
 
-nbrinput = INPUT_SHAPE_R
-nbroutput = 2
-filepath_base = './logs/'
-dropoutK = 0.5
-batch_size = 1024 
-lr = 5.0e-4
-def initAgent():		
-	model = NN( filepath_base,nbrinput=nbrinput,nbroutput=nbroutput,lr=lr,filepathin=None)
-	model.init()
-	return model
+if useGAZEBO :
+	nbrinput = INPUT_SHAPE_R
+	nbroutput = 2
+	filepath_base = './logs/'
+	dropoutK = 0.5
+	batch_size = 1024 
+	lr = 5.0e-4
+	def initAgent():		
+		model = NN( filepath_base,nbrinput=nbrinput,nbroutput=nbroutput,lr=lr,filepathin=None)
+		model.init()
+		return model
 	
 
 
-env = Swarm1GazeboRL()
-env.make()
+if useGAZEBO :
+	env = Swarm1GazeboRL()
+	env.make()
+	print('\n\nwait for 5 sec...\n\n')
+	time.sleep(5)
+	env.reset()
+	env.setPause(False)
 
-#agent = initAgent()
+img_size = (84,84,1)
+if useGAZEBO :
+	img_size = (60,160,3)
 
-print('\n\nwait for 5 sec...\n\n')
-time.sleep(5)
-env.reset()
-env.setPause(False)
-
-
-img_size = (60,320)
 rec = False
 # In[35]:
 
+maxReplayBufferSize = 20
 max_episode_length = 300
-updateT = 10
-nbrStepPerReplay = 100
+updateT = 2
+nbrStepsPerReplay = 100
 gamma = .99 # discount rate for advantage estimation and reward discounting
-imagesize = [img_size[0],img_size[1],3]
+imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
 h_size = 256
-a_size = 2
-model_path = './model-RL3-GazeboRL-robot1swarm'
-num_workers = 2
-lr=1e-3
+
+a_size = 1
+model_path = './model-RL-Pendulum'
+if useGAZEBO :
+	a_size = 2	
+	model_path = './model-RL3-GazeboRL-robot1swarm'
+num_workers = 4
+lr=1e-2
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -92,7 +104,7 @@ def envstep(env,action) :
 		outimg = np.zeros(size=img_size)
 	
 	if output[1] is not None :
-		outr = output[1]
+		outr = output[1]['/RL/reward'].data
 	
 	if output[2] is not None :
 		outdone = output[2]
@@ -305,69 +317,91 @@ class Worker():
 	def work(self,max_episode_length,gamma,sess,coord,saver):
 		episode_count = sess.run(self.global_episodes)
 		total_steps = 0
+		dummy_action = np.zeros(a_size)
 		print ("Starting worker " + str(self.number))
 		make_gif_log = False
 		with sess.as_default(), sess.graph.as_default():                 
 			#Let us first synchronize this worker with the global network :
 			if self.number != 0:
 				sess.run(self.update_local_ops)
-				while not coord.should_stop():
-					#sess.run(self.update_local_ops)
-					episode_buffer = []
-					episode_values = []
-					episode_frames = []
-					episode_reward = 0
-					episode_step_count = 0
-					d = False
+				print('Worker synchronized...')
+			while not coord.should_stop():
+				episode_buffer = []
+				episode_values = []
+				episode_frames = []
+				episode_reward = 0
+				episode_step_count = 0
+				d = False
 
 				#Let us start a new episode :
 				if self.number == 0 :
-					s = self.env.reset()
-					self.env.render()
+					print('MAIN AGENT : initializing episode...')
+					if not useGAZEBO :
+						s = self.env.reset()
+						self.env.render()
+						s = process_frame(s)
+					else :
+						s,dr,ddone,_ = envstep(self.env,dummy_action)
+						s = preprocess(s, img_size[0], img_size[1] )
+						
 					episode_frames.append(s)
-					#s = process_frame(s)
-					s = preprocess(s, *(img_size) )
+					
 					if self.rec :
 						rnn_state = self.local_AC.state_init
-				            
-					while d == False:
+				
+					remainingSteps = max_episode_length      
+					while d == False :
+						remainingSteps -= 1
 						#Take an action using probabilities from policy network output.
 						if self.rec :
 							rnn_state_q = rnn_state
 							a,v,rnn_state = sess.run([self.local_AC.policy,self.local_AC.Vvalue,self.local_AC.Qvalue,self.local_AC.state_out], 
-								feed_dict={self.local_AC.inputs:[s],
+								feed_dict={self.local_AC.inputs:s,
 								self.local_AC.state_in[0]:rnn_state[0],
 								self.local_AC.state_in[1]:rnn_state[1]})
 							q = sess.run([self.local_AC.Qvalue], 
-								feed_dict={self.local_AC.inputs:[s],
+								feed_dict={self.local_AC.inputs:s,
 								self.local_AC.state_in[0]:rnn_state_q[0],
 								self.local_AC.state_in[1]:rnn_state_q[1],
 								self.local_AC.actions:a})
 						else :
 							a,v = sess.run([self.local_AC.policy,self.local_AC.Vvalue], 
-								feed_dict={self.local_AC.inputs:[s]})
+								feed_dict={self.local_AC.inputs:s})
 							q = sess.run([self.local_AC.Qvalue], 
-								feed_dict={self.local_AC.inputs:[s],
+								feed_dict={self.local_AC.inputs:s,
 								self.local_AC.actions:a})
-				          
+						
+						a= a[0]		
+						rospy.loginfo('ACTION :')
+						rospy.loginfo(a)
+						logfile = open('./logfile.txt', 'w+')
+						logfile.write('episode:{} / step:{} / action:'.format(episode_count,remainingSteps)+str(a)+'\n')
+						logfile.close()
 
-						s1, r, d, _ = envstep(self.env, a)
+
+						if useGAZEBO :
+							s1, r, d, _ = envstep(self.env, a)
+						else :
+							s1, r, d, _ = self.env.step(a)
+							self.env.render()
 
 						if d == False:
 							episode_frames.append(s1)
-							#s1 = process_frame(s1)
-							s1 = preprocess(s1, *(img_size) )
+							if useGAZEBO :
+								s1 = preprocess(s1, img_size[0], img_size[1] )
+							else :
+								s1 = process_frame(s1)
 						else:
 							s1 = s
-						
+					
 						episode_buffer.append([s,a,r,s1,d,v[0,0]])
 						episode_values.append(v[0,0])
-						
+					
 						episode_reward += r
 						s = s1                    
 						total_steps += 1
 						episode_step_count += 1
-						
+					
 						'''
 						# If the episode hasn't ended, but the experience buffer is full, then we
 						# make an update step using that experience rollout.
@@ -384,21 +418,25 @@ class Worker():
 								q1 = sess.run(self.local_AC.Qvalue, 
 										feed_dict={self.local_AC.inputs:[s1],
 										self.local_AC.actions:a})[0,0]
-		
+	
 							v_l,p_l,e_l,g_n,v_n = self.train(episode_buffer,sess,gamma,q1)
 							episode_buffer = []
 						'''    
-
+					
+						if remainingSteps < 0 :
+							d = True
 						if d == True:
 							break
 					#END OF EPISODE WHILE LOOP...
-          
+		      
 					self.episode_rewards.append(episode_reward)
 					self.episode_lengths.append(episode_step_count)
 					self.episode_mean_values.append(np.mean(episode_values))
 
 					#Let us add this episode_buffer to the replayBuffer :
 					self.rBuffer.append(episode_buffer)
+					if len(self.rBuffer) > maxReplayBufferSize :
+						self.rBuffer.pop()
 
 					# Periodically save gifs of episodes, model parameters, and summary statistics.
 					if episode_count % 5 == 0 and episode_count != 0:
@@ -427,7 +465,7 @@ class Worker():
 					self.summary_writer.add_summary(summary, episode_count)
 
 					self.summary_writer.flush()
-					
+				
 					sess.run(self.increment)
 
 				#END OF IF SELF.NUMBER == 0
@@ -436,7 +474,7 @@ class Worker():
 					if len(self.rBuffer) != 0:
 						idxEpisode = np.random.randint(len(self.rBuffer))
 						maxIdxStep = len(self.rBuffer[idxEpisode])-1
-						idxSteps = np.random.randint(maxIdxStep,size=self.nbrStepPerReplay)
+						idxSteps = np.random.randint(maxIdxStep,size=min(maxIdxStep,self.nbrStepPerReplay) )
 						rollout = self.rBuffer[idxEpisode][idxSteps]
 						s1 = rollout[:,3]
 						# Since we don't know what the true final return is, we "bootstrap" from our current
@@ -444,21 +482,21 @@ class Worker():
 						# TODO : bootstrap from the target network :
 						if self.rec :
 							a = sess.run(self.local_AC.policy,
-							feed_dict={self.local_AC.inputs:[s1],
+							feed_dict={self.local_AC.inputs:s1,
 							self.local_AC.state_in[0]:rnn_state[0],
 							self.local_AC.state_in[1]:rnn_state[1]})[0,0]
 							q1 = sess.run(self.local_AC.Qvalue, 
-							feed_dict={self.local_AC.inputs:[s1],
+							feed_dict={self.local_AC.inputs:s1,
 							self.local_AC.state_in[0]:rnn_state[0],
 							self.local_AC.state_in[1]:rnn_state[1],
 							self.local_AC.actions:a})[0,0]
 						else :
 							a = sess.run(self.local_AC.policy,
-							feed_dict={self.local_AC.inputs:[s1]})[0,0]
+							feed_dict={self.local_AC.inputs:s1})[0,0]
 							q1 = sess.run(self.local_AC.Qvalue, 
-							feed_dict={self.local_AC.inputs:[s1],
+							feed_dict={self.local_AC.inputs:s1,
 							self.local_AC.actions:a})[0,0]
-						
+					
 						v_l,p_l,e_l,g_n,v_n = self.train( rollout,sess,gamma,q1)
 
 						#Let us update the global network :
@@ -473,18 +511,23 @@ tf.reset_default_graph()
 
 
 #with tf.device("/cpu:0"): 
-with tf.device("/gpu:0"): 
-	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
-	trainer = tf.train.AdamOptimizer(learning_rate=lr)
-	master_network = AC_Network(imagesize,s_size,h_size,a_size,'global',None,rec=rec) # Generate global network
-	#num_workers = multiprocessing.cpu_count() # Set workers ot number of available CPU threads
-	workers = []
-	replayBuffer = []
-	# Create worker classes
-	for i in range(num_workers):
+#with tf.device("/gpu:0"): 
+global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
+trainer = tf.train.AdamOptimizer(learning_rate=lr)
+master_network = AC_Network(imagesize,s_size,h_size,a_size,'global',None,rec=rec) # Generate global network
+#num_workers = multiprocessing.cpu_count() # Set workers ot number of available CPU threads
+workers = []
+replayBuffer = []
+# Create worker classes
+for i in range(num_workers):
+	game = None
+	if useGAZEBO :
 		game = env
-		workers.append(Worker(game,replayBuffer,i,imagesize,s_size,h_size,a_size,trainer,model_path,global_episodes,rec,updateT,nbrStepsPerReplay))
-	saver = tf.train.Saver(max_to_keep=5)
+	else :
+		if i == 0 :
+			game = gym.make('Pendulum-v0')
+	workers.append(Worker(game,replayBuffer,i,imagesize,s_size,h_size,a_size,trainer,model_path,global_episodes,rec,updateT,nbrStepsPerReplay))
+saver = tf.train.Saver(max_to_keep=5)
 
 with tf.Session() as sess:
 	coord = tf.train.Coordinator()
@@ -494,6 +537,8 @@ with tf.Session() as sess:
 		saver.restore(sess,ckpt.model_checkpoint_path)
 	else:
 		sess.run(tf.global_variables_initializer())
+	
+	print('MODEL INITIALIZED....')
 	
 	# This is where the asynchronous magic happens.
 	# Start the "work" process for each worker in a separate threat.
