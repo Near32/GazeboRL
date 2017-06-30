@@ -1,5 +1,5 @@
 import subprocess
-import thread
+import threading
 from threading import Lock
 import time
 import rospy
@@ -256,7 +256,8 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.publishers[self.publishersList[0]] = rospy.Publisher( self.publishersList[0], self.commands['pubs'][0], queue_size=10) 
 		self.pub_bools[self.publishersList[0]] = True
 		self.pub_rates[self.publishersList[0]] = rospy.Rate(1)
-		self.pub_threads[self.publishersList[0]] = thread.start_new_thread ( Swarm1GazeboRL.publishVELOCITY, (self,self.continuousActions) )
+		#self.pub_threads[self.publishersList[0]] = thread.start_new_thread ( Swarm1GazeboRL.publishVELOCITY, (self,self.continuousActions) )
+		self.pub_threads[self.publishersList[0]] = threading.start_new_thread ( Swarm1GazeboRL.publishVELOCITY, (self,self.continuousActions) )
 		
 		return
 	
