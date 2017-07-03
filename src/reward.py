@@ -53,10 +53,11 @@ while continuer :
 		
 		#let us compute the rewards to publish :
 		radius = np.sqrt( cp.x**2+cp.y**2 )
-		rp = (radius-args.radius)**2
-		rt = ( np.sqrt(ct.linear.x**2+ct.linear.y**2) - args.velocity )**2
+		rp = 100*np.sqrt(ct.linear.x**2+ct.linear.y**2)#(radius-args.radius)**2
+		#rt = ( np.sqrt(ct.linear.x**2+ct.linear.y**2) - args.velocity )**2
+		rt = 100*(ct.angular.z - 0.05)**2
 		lambdap = 0.8
-		tr.data = lambdap*rp+(1-lambdap)*rt
+		tr.data = 1.0/(1.0+rt+rp)#lambdap*rp+(1-lambdap)*rt
 		
 	if tr is not None :
 		pubR.publish(tr)
