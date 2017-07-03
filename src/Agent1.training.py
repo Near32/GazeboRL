@@ -782,14 +782,14 @@ class Worker():
 				self.local_AC.actions:actions,
 				self.local_AC.state_in[0]:rnn_state[0],
 				self.local_AC.state_in[1]:rnn_state[1],
-				self.keep_prob:self.dropoutK,
-				self.phase:True}
+				self.local_AC.keep_prob:self.local_AC.dropoutK,
+				self.local_AC.phase:True}
 		else :
 			feed_dict = {self.local_AC.target_qvalue:self.target_qvalue,
 				self.local_AC.inputs:vobs,
 				self.local_AC.actions:actions,
-				self.k:self.dropoutK,
-				self.phase:True}
+				self.local_AC.keep_prob:self.local_AC.dropoutK,
+				self.local_AC.phase:True}
 			v_l,p_l,e_l,g_n,v_n,_ = sess.run([self.local_AC.Qvalue_loss,
 				self.local_AC.policy_loss,
 				self.local_AC.entropy,
@@ -848,25 +848,25 @@ class Worker():
 									feed_dict={self.local_AC.inputs:s,
 									self.local_AC.state_in[0]:rnn_state[0],
 									self.local_AC.state_in[1]:rnn_state[1],
-									self.keep_prob:1.0,
-									self.phase:False})
+									self.local_AC.keep_prob:1.0,
+									self.local_AC.phase:False})
 								q = sess.run([self.local_AC.Qvalue], 
 									feed_dict={self.local_AC.inputs:s,
 									self.local_AC.state_in[0]:rnn_state_q[0],
 									self.local_AC.state_in[1]:rnn_state_q[1],
 									self.local_AC.actions:a,
-									self.keep_prob:1.0,
-									self.phase:False})
+									self.local_AC.keep_prob:1.0,
+									self.local_AC.phase:False})
 							else :
 								a,v = sess.run([self.local_AC.policy,self.local_AC.Vvalue], 
 									feed_dict={self.local_AC.inputs:s,
-									self.keep_prob:1.0,
-									self.phase:False})
+									self.local_AC.keep_prob:1.0,
+									self.local_AC.phase:False})
 								q = sess.run([self.local_AC.Qvalue], 
 									feed_dict={self.local_AC.inputs:s,
 									self.local_AC.actions:a,
-									self.keep_prob:1.0,
-									self.phase:False})
+									self.local_AC.keep_prob:1.0,
+									self.local_AC.phase:False})
 						
 							#logfile = open('./logfile.txt', 'w+')
 							if logit > 50 :
@@ -986,25 +986,25 @@ class Worker():
 								feed_dict={self.local_AC.inputs:s1,
 								self.local_AC.state_in[0]:rnn_state[0],
 								self.local_AC.state_in[1]:rnn_state[1],
-								self.keep_prob:1.0,
-								self.phase:False})
+								self.local_AC.keep_prob:1.0,
+								self.local_AC.phase:False})
 								q1 = sess.run(self.local_AC.Qvalue, 
 								feed_dict={self.local_AC.inputs:s1,
 								self.local_AC.state_in[0]:rnn_state[0],
 								self.local_AC.state_in[1]:rnn_state[1],
 								self.local_AC.actions:a,
-								self.keep_prob:1.0,
-								self.phase:False})[0,0]
+								self.local_AC.keep_prob:1.0,
+								self.local_AC.phase:False})[0,0]
 							else :
 								a = sess.run(self.local_AC.policy,
 								feed_dict={self.local_AC.inputs:s1,
-								self.keep_prob:1.0,
-								self.phase:False})
+								self.local_AC.keep_prob:1.0,
+								self.local_AC.phase:False})
 								q1 = sess.run(self.local_AC.Qvalue, 
 								feed_dict={self.local_AC.inputs:s1,
 								self.local_AC.actions:a,
-								self.keep_prob:1.0,
-								self.phase:False})[0,0]
+								self.local_AC.keep_prob:1.0,
+								self.local_AC.phase:False})[0,0]
 					
 							v_l,p_l,e_l,g_n,v_n = self.train( rollout,sess,gamma,q1)
 
