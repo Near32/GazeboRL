@@ -79,8 +79,8 @@ if useGAZEBO :
 
 
 
-num_workers = 4
-lr=1e-3
+num_workers = 8
+lr=1e-2
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -193,6 +193,8 @@ class AC_Network():
 		self.build_model_middle()
 		self.build_model_top()
 		self.build_loss_functions()
+		
+		self.merged_summary = tf.summary.merge_all()
 	
 	
 	def weight_variable(self,shape, name=None):
@@ -964,6 +966,10 @@ class Worker():
 						#summary.value.add(tag='Losses/Var Norm', simple_value=float(v_n))
 						self.summary_writer.add_summary(summary, episode_count)
 
+						self.summary_writer.flush()
+						
+						summary = sess.run([self.merged_summary])
+						self.summary_writer.add_summary(summary,episode_count)
 						self.summary_writer.flush()
 				
 						sess.run(self.increment)
