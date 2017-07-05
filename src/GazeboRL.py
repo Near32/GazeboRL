@@ -151,6 +151,7 @@ class GazeboRL :
 		time.sleep(1)
 		
 		subprocess.Popen(['rosservice', 'call', '/gazebo/reset_world'])
+		#subprocess.Popen(['rosservice', 'call', '/gazebo/reset_simulation'])
 		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : RESET.\n")
 		time.sleep(1)
 		

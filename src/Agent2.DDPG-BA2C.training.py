@@ -59,7 +59,7 @@ if useGAZEBO :
 rec = False
 # In[35]:
 
-maxReplayBufferSize = 70
+maxReplayBufferSize = 100
 max_episode_length = 100
 updateT = 1
 updateTau = 5e-3
@@ -81,14 +81,13 @@ if useGAZEBO :
 	# ACTUAL RESULT : but the reward is maximized... get read of the minus...
 	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise01'
 	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise02'
-	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise05'
-	model_path = './model-DDPGB-BA2C-loss-r1s+EN05'
+	model_path = './DDPG-BA2C-r1s+EN01'
 	
 
 
 
-num_workers = 8
-lr=1e-4
+num_workers = 2
+lr=1e-3
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -488,7 +487,7 @@ class AC_Network():
 		
 			#Input and visual encoding layers
 			#PLACEHOLDER :
-			self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32)
+			self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
 			self.imageIn = tf.reshape(self.inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
 			
@@ -610,21 +609,14 @@ class AC_Network():
 			self.policy = self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.identity)	
 			#self.Vvalue = slim.fully_connected(rnn_out,1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)						              
 			self.Vvalue = self.nn_layer(rnn_out, shape_out[1], 1, 'V-value', act=tf.identity)	
-			#PLACEHOLDER :
-			self.actions = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32)
-			#
-			#actionadvantage = slim.fully_connected(self.actions, 10*self.a_size,	activation_fn=None, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
 			
-			# use with 01 :
-			#actionadvantage = self.nn_layerBN(self.actions, self.a_size, self.nbrOutput, self.phase,'action-advantage')
+			#PLACEHOLDER :
+			self.actions = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='actions')
+			#
 			vvalueadvantage = self.nn_layerBN(rnn_out, shape_out[1], self.nbrOutput, self.phase, 'vvalue-advantage')
 			
-			#concat = tf.concat( [vvalueadvantage, self.policy], axis=1,name='concat-Vvalue-policy')
 			concat = tf.concat( [vvalueadvantage, self.actions], axis=1,name='concat-Vvalue-actions')
 			concat_shape = concat.get_shape().as_list()
-			# use with 01 :
-			#policyadvantage = self.nn_layerBN(self.policy, self.a_size, self.nbrOutput, self.phase, 'policy-advantage')
-			
 			#self.Qvalue = slim.fully_connected(actionadvantage+self.Vvalue,1,activation_fn=None,weights_initializer=normalized_columns_initializer(0.01),biases_initializer=None)
 			#self.Qvalue = self.nn_layer(actionadvantage+vvalueadvantage, self.nbrOutput, 1, 'Q-value', act=tf.identity)	
 			
@@ -729,7 +721,7 @@ class AC_Network():
 			#Only the worker network need ops for loss functions and gradient updating.
 			if self.scope != 'global':
 				#PLACEHOLDER :
-				self.target_qvalue = tf.placeholder(shape=[None,1],dtype=tf.float32)
+				self.target_qvalue = tf.placeholder(shape=[None,1],dtype=tf.float32,name='target_qvalues')
 				#
 				#Gradients :
 				qreshaped = tf.reshape(self.Qvalue,[-1])
@@ -742,17 +734,34 @@ class AC_Network():
 				#self.policy_loss = -tf.reduce_sum(self.Qvalue_policy)
 				self.loss = 0.5*self.Qvalue_loss + self.policy_loss - 0.01*self.entropy + self.lambda_regL2*self.l2_loss
 
+				
 				#Get gradients from local network using local losses
 				local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+				self.var_norms = tf.global_norm(local_vars)
+				'''
 				#local_vars = tf.local_variables()
 				self.gradients = tf.gradients(self.loss,local_vars)
-				self.var_norms = tf.global_norm(local_vars)
 				grads,self.grad_norms = tf.clip_by_global_norm(self.gradients,40.0)
+				'''
+				# PLACEHOLDER :
+				self.critic_gradients_action = tf.placeholder(tf.float32,[None,self.a_size],name='critic_gradients_action')#tf.gradients(tf.reduce_sum(self.Qvalue),self.actions)
+				self.critic_gradients_action_op = tf.gradients(self.Qvalue,self.actions)
+				self.actor_gradients = tf.gradients(self.policy,local_vars,-self.critic_gradients_action)
+				
+				self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars)
+				actor_grads,self.actor_grad_norms = tf.clip_by_global_norm(self.actor_gradients,40.0)
+				critic_grads,self.critic_grad_norms = tf.clip_by_global_norm(self.critic_gradients,40.0)
+				self.grad_norms = self.actor_grad_norms + self.critic_grad_norms
 				
 				#Apply local gradients to global network
 				global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
 				#global_vars = tf.trainable_variables()
-				self.apply_grads = self.trainer.apply_gradients(zip(grads,global_vars))
+				#self.apply_grads = self.trainer.apply_gradients(zip(grads,global_vars))
+				print(len(global_vars))
+				print(len(critic_grads))
+				print(len(actor_grads))
+				self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients(zip(critic_grads,global_vars)), 'actor':self.trainer['actor'].apply_gradients(zip(actor_grads,global_vars)) }
+
 
 
 
@@ -827,17 +836,26 @@ class Worker():
 				self.local_AC.keep_prob:self.local_AC.dropoutK,
 				self.local_AC.phase:True}
 		else :
+			feed_dict = {self.local_AC.inputs:vobs,
+				self.local_AC.actions:actions,
+				self.local_AC.keep_prob:self.local_AC.dropoutK,
+				self.local_AC.phase:False}
+			critic_gradients_action = sess.run([self.local_AC.critic_gradients_action_op],
+				feed_dict = feed_dict)[0][0]
+				
 			feed_dict = {self.local_AC.target_qvalue:self.target_qvalue,
 				self.local_AC.inputs:vobs,
 				self.local_AC.actions:actions,
 				self.local_AC.keep_prob:self.local_AC.dropoutK,
-				self.local_AC.phase:True}
+				self.local_AC.phase:True,
+				self.local_AC.critic_gradients_action:critic_gradients_action}
 			v_l,p_l,e_l,g_n,v_n,_ = sess.run([self.local_AC.Qvalue_loss,
 				self.local_AC.policy_loss,
 				self.local_AC.entropy,
 				self.local_AC.grad_norms,
 				self.local_AC.var_norms,
-				self.local_AC.apply_grads],
+				self.local_AC.apply_grads['critic'],
+				self.local_AC.apply_grads['actor']],
 				feed_dict=feed_dict)
 		
 		return v_l / len(rollout),p_l / len(rollout),e_l / len(rollout), g_n,v_n
@@ -956,7 +974,7 @@ class Worker():
 							#EXPLORATION NOISE :
 							eps_greedy_prob = 0.3
 							if np.random.rand() < eps_greedy_prob :
-								scale = 0.5
+								scale = 0.1
 								a_noise = np.random.normal(loc=0.0,scale=scale,size=a[0].shape)
 								a[0] += a_noise
 
@@ -1099,7 +1117,7 @@ tf.reset_default_graph()
 with tf.device("/cpu:0"): 
 #with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
-	trainer = tf.train.AdamOptimizer(learning_rate=lr)
+	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr*10.0), 'critic':tf.train.AdamOptimizer(learning_rate=lr)}
 	master_network = AC_Network(imagesize,s_size,h_size,a_size,'global',None,rec=rec) # Generate global network
 	#num_workers = multiprocessing.cpu_count() # Set workers ot number of available CPU threads
 	workers = []

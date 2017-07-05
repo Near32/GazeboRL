@@ -35,11 +35,12 @@ subODOM = rospy.Subscriber( '/robot_model_teleop_0/odom_diffdrive', Odometry, ca
 pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
 
 
-rate = rospy.Rate(20)
+rate = rospy.Rate(100)
 
 todom = None
 tr = Float64()
 tr.data = 0.0
+maxvalue = 10.0
 
 while continuer :
 	
@@ -53,11 +54,12 @@ while continuer :
 		
 		#let us compute the rewards to publish :
 		radius = np.sqrt( cp.x**2+cp.y**2 )
-		rp = 100*np.sqrt(ct.linear.x**2+ct.linear.y**2)#(radius-args.radius)**2
-		#rt = ( np.sqrt(ct.linear.x**2+ct.linear.y**2) - args.velocity )**2
-		rt = 100*(ct.angular.z - 0.05)**2
-		lambdap = 0.8
-		tr.data = 1.0/(1.0+rt+rp)#lambdap*rp+(1-lambdap)*rt
+		rp = (radius-args.radius)**2
+		rt = ( ct.linear.x - args.velocity )**2
+		penality = ( ct.angular.z )**2
+		lambdap = 0.5
+		lp = 10.0
+		tr.data = -min(maxvalue, lambdap*rp+(1-lambdap)*rt+lp*penality)/maxvalue
 		
 	if tr is not None :
 		pubR.publish(tr)
