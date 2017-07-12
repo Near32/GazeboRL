@@ -5,6 +5,9 @@ from threading import Lock
 import time
 import rospy
 
+from math import sin, cos
+import numpy as np
+
 from sensor_msgs.msg import Image
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
@@ -336,7 +339,55 @@ class Swarm1GazeboRL(GazeboRL) :
 		if len(rewardItems):
 			self.rewards.append(rewardItems)
 			
+	
+	def reset(self) :
+		self.rMutex.acquire()
+		
+		self.setPause(True)
+		time.sleep(1)
+		
+		subprocess.Popen(['rosservice', 'call', '/gazebo/reset_world'])
+		#subprocess.Popen(['rosservice', 'call', '/gazebo/reset_simulation'])
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : RESET.\n")
+		time.sleep(1)
+		
+		self.setPause(False)
+		
+		self.randomInitialization()
+		
+		
+		self.rMutex.release()
+		
+	
+	def randomInitialization(self) :
+		randx = 0.0
+		randy = 0.0
+		robot_name = "robot_0"
+		
+		notokay = True
+		sizemin = 0.5
+		sizemax = 4.0
+		sizeobs = 0.2
+		posobs = [ [2.2, 0.0], [-2.8, 0.0] ]
+		
+		while notokay	:
+			notokay = False
+			randx = np.random.uniform(low=sizemin,high=sizemax)
+			randy = np.random.uniform(low=sizemin,high=sizemax)
 			
+			#verification :
+			for obs in posobs :
+				distance = np.sqrt( (randx-obs[0])**2+(randy-obs[1])**2 )
+				if distance < sizeobs :
+					notokay = True
+					
+					
+	 	randtheta = np.random.uniform(low=-3.1415,high=3.1415)
+	 	
+	 	#subprocess.Popen(['rosservice', 'call', '/gazebo/get_model_state', '\'model_name: robot_0\' ', '\'relative_entity_name: world\' '])
+		#subprocess.Popen(['rosservice', 'call', '/gazebo/get_world_properties' ])
+		subprocess.Popen(['rosservice', 'call', '/gazebo/set_model_state', "{model_state: { model_name: "+robot_name+", pose: { position: { x: "+str(randx)+", y: "+str(randy)+", z: 0 }, orientation: {x: 0, y: 0, z: "+str(sin(randtheta/2.0))+", w: "+str(cos(randtheta/2.0))+" } }, twist: { linear: {x: 0.0 , y: 0 ,z: 0 } , angular: { x: 0.0 , y: 0 , z: 0.0 } } , reference_frame: world }} "])		
+		
 			
 	def callbackODOMETRY(self, odom ) :
 		self.rMutex.acquire()

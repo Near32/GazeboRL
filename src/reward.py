@@ -56,10 +56,11 @@ while continuer :
 		radius = np.sqrt( cp.x**2+cp.y**2 )
 		rp = (radius-args.radius)**2
 		rt = ( ct.linear.x - args.velocity )**2
-		penality = ( ct.angular.z )**2
+		penality = ( ct.angular.z )**2 + (( ct.linear.x )**2)/100.0
 		lambdap = 0.5
-		lp = 10.0
-		tr.data = -min(maxvalue, lambdap*rp+(1-lambdap)*rt+lp*penality)/maxvalue
+		lp = 2.0
+		#tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt+lp*penality )
+		tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt )
 		
 	if tr is not None :
 		pubR.publish(tr)

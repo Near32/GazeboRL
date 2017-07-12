@@ -56,17 +56,18 @@ if useGAZEBO :
 
 img_size = (84,84,1)
 if useGAZEBO :
-	img_size = (180,320,3)
+	img_size = (90,160,3)
+	#img_size = (180,320,3)
 
 rec = False
 # In[35]:
 
 a_bound = 2.0
-maxReplayBufferSize = 10000
-max_episode_length = 500
+maxReplayBufferSize = 5000
+max_episode_length = 100
 updateT = 1
 updateTau = 1e-3
-nbrStepsPerReplay = 256
+nbrStepsPerReplay = 128
 gamma = .99 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
@@ -81,14 +82,10 @@ model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
 eps_greedy_prob = 0.3
 if useGAZEBO :
 	a_size = 2	
-	#model_path = './model-RL3-GazeboRL-robot1swarm'
-	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise'
-	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise005'
-	
-	# ACTUAL RESULT : but the reward is maximized... get read of the minus...
-	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise01'
-	#model_path = './model-GazeboRL-robot1swarm+ExplorationNoise02'
-	model_path = './DDPG-BA2C-r1s+EN01'
+	#model_path = './DDPG-BA2C-r1s+batch16-tau1e-3-lr1e-4-w4'
+	#model_path = './DDPG-BA2C-r1s+batch32-tau1e-3-lr1e-4-w4'
+	#model_path = './DDPG-BA2C-r1s+90x160-batch128-tau1e-3-lr1e-4-w4'
+	model_path = './dummy'
 	
 
 
@@ -212,13 +209,9 @@ class AC_Network():
 		
 		self.summary_ops = []
 		
-		if self.useGAZEBO :
-			#TODO ...
-			self.build_model_middle()
-		else :
-			#inputs, actions, policy, Vvalue, Qvalue, keep_prob, phase
-			self.inputs, self.actions, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase = self.create_network(self.scope)
-			self.t_inputs, self.t_actions, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network(self.scope+'_target')
+		#inputs, actions, policy, Vvalue, Qvalue, keep_prob, phase
+		self.inputs, self.actions, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase = self.create_network(self.scope)
+		self.t_inputs, self.t_actions, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network(self.scope+'_target')
 		
 		self.build_loss_functions()
 		
@@ -520,7 +513,8 @@ class AC_Network():
 				input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 				nbr_filter1 = 32
 				output_dim1 = [ nbr_filter1]
-				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
+				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
+				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
 				rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
 		
 				#LAYER STN 1 :
@@ -536,7 +530,8 @@ class AC_Network():
 				# CONV LAYER 2 :
 				nbr_filter2 = 32
 				output_dim2 = [ nbr_filter2]
-				relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
+				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
+				relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
 				rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
 		
 				#LAYER STN 2 :
@@ -573,7 +568,7 @@ class AC_Network():
 				shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
 				out1 = 256
 				fc_x_input = tf.reshape( rmpc3_do, shape_fc )
-				convnet = fc_x_inputs
+				convnet = fc_x_input
 			else :
 				convnet = inputs
 				
@@ -585,9 +580,10 @@ class AC_Network():
 	
 	def build_actor(self, convnet, keep_prob, phase, scope) :			
 		with tf.variable_scope(scope):
+			shape_out = convnet.get_shape().as_list()
 			# ACTOR :
 			out1 = 256
-			hidden1 = self.nn_layerBN(convnet, self.s_size, out1, phase, 'actor_layer1', act=tf.nn.relu, std=1e-2)
+			hidden1 = self.nn_layerBN(convnet, shape_out[1], out1, phase, 'actor_layer1', act=tf.nn.relu, std=1e-2)
 			#hidden1 = self.nn_layer(convnet, self.s_size, out1, 'actor_layer1', act=tf.nn.relu, std=1e-2)
 			dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
@@ -649,10 +645,11 @@ class AC_Network():
 			
 	def build_critic(self, convnet, keep_prob, phase, scope) :			
 		with tf.variable_scope(scope):
+			shape_out = convnet.get_shape().as_list()
 			# CRITIC :
 			out1 = 400
 			#hidden1 = self.nn_layerBN(convnet, self.s_size, out1, phase, 'critic_layer1', act=tf.nn.relu)
-			hidden1 = self.nn_layer(convnet, self.s_size, out1, 'critic_layer1', act=tf.nn.relu)
+			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
 			dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			#out2 = 300
