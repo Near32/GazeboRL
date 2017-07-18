@@ -54,7 +54,7 @@ if useGAZEBO :
 	env.setPause(False)
 	LoopRate = rospy.Rate(200)
 
-nbrskipframe = 1
+nbrskipframe = 4
 if useGAZEBO :
 	#img_size = (180,320,3)
 	#img_size = (90,80,nbrskipframe)
@@ -69,12 +69,12 @@ rec = False
 # In[35]:
 
 a_bound = 2.0
-maxReplayBufferSize = 4000
+maxReplayBufferSize = 2500
 max_episode_length = 400
 updateT = 1
 updateTau = 1e-3
-nbrStepsPerReplay = 8
-gamma = 0.01#.99 # discount rate for advantage estimation and reward discounting
+nbrStepsPerReplay = 32
+gamma = 0.99 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
 
@@ -90,7 +90,7 @@ model_path = './DDPG-BA2C-batch8-tau1e-3-lr1e-4-w4'
 eps_greedy_prob = 0.3
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s+240x320-sf1-batch8-tau1e-3-lr1e-4-w1'
+	model_path = './DDPG-BA2C-r1s+240x320-sf4-batch32-tau1e-3-lr1e-4-w1'
 	#model_path = './DDPG-BA2C-r1s+120x320-sf2-batch8-tau1e-3-lr1e-4-w1'
 	#model_path = './DDPG-BA2C-r1s+180x320-sf4-batch32-tau1e-3-lr1e-4-w4'
 	
@@ -833,8 +833,8 @@ class AC_Network():
 			self.loss = 0.5*self.Qvalue_loss + 0.5*self.policy_loss + self.lambda_regL2*self.l2_loss #- 0.01*self.entropy
 
 			#Get gradients from local network using local losses
-			#local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
-			local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/actor')
+			local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+			#local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/actor')
 			self.var_norms = tf.global_norm(local_vars)
 			
 			# PLACEHOLDER :
@@ -1226,6 +1226,9 @@ class Worker():
 						#self.rBuffer.append(episode_buffer)
 						for el in episode_buffer :
 							self.rBuffer.append(el)
+							
+						print('EXPERIENCE BUFFER : size : {} / {}'.format(len(self.rBuffer), maxReplayBufferSize) )
+						
 						while len(self.rBuffer) > maxReplayBufferSize :
 							del self.rBuffer[0]
 
@@ -1248,7 +1251,7 @@ class Worker():
 					#END OF IF SELF.NUMBER == 0
 				
 					# Update the network using the experience replay buffer:
-					if len(self.rBuffer) > 0:
+					if len(self.rBuffer) > maxReplayBufferSize/2:
 						a1 = None
 						#idxEpisodes = np.random.choice(len(self.rBuffer),self.nbrStepPerReplay)
 						#idxSteps = [ np.random.randint(low=0,high=len(self.rBuffer[idx]) ) for idx in idxEpisodes ]
