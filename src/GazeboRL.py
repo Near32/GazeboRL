@@ -365,10 +365,11 @@ class Swarm1GazeboRL(GazeboRL) :
 		robot_name = "robot_0"
 		
 		notokay = True
-		sizemin = 0.5
-		sizemax = 4.0
-		sizeobs = 0.2
-		posobs = [ [2.2, 0.0], [-2.8, 0.0] ]
+		sizemin = -2.5
+		sizemax = 2.5
+		sizeobs = 0.75
+		#posobs = [ [2.2, 0.0], [-2.8, 0.0], [0.0, 0.0] ]
+		posobs = [ [0.0, 0.0] ]
 		
 		while notokay	:
 			notokay = False

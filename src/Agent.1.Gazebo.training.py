@@ -4,7 +4,7 @@
 useGAZEBO = True
 
 show = False
-load_model = False
+load_model = True
 
 import threading
 import multiprocessing
@@ -52,22 +52,22 @@ if useGAZEBO :
 	time.sleep(5)
 	env.reset()
 	env.setPause(False)
-	LoopRate = rospy.Rate(50)
+	LoopRate = rospy.Rate(200)
 
 img_size = (84,84,1)
 if useGAZEBO :
-	img_size = (90,160,3)
-	#img_size = (180,320,3)
+	#img_size = (90,160,3)
+	img_size = (180,320,3)
 
 rec = False
 # In[35]:
 
 a_bound = 2.0
-maxReplayBufferSize = 5000
+maxReplayBufferSize = 10000
 max_episode_length = 100
 updateT = 1
 updateTau = 1e-3
-nbrStepsPerReplay = 128
+nbrStepsPerReplay = 32
 gamma = .99 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
@@ -85,12 +85,13 @@ if useGAZEBO :
 	#model_path = './DDPG-BA2C-r1s+batch16-tau1e-3-lr1e-4-w4'
 	#model_path = './DDPG-BA2C-r1s+batch32-tau1e-3-lr1e-4-w4'
 	#model_path = './DDPG-BA2C-r1s+90x160-batch128-tau1e-3-lr1e-4-w4'
-	model_path = './dummy'
+	model_path = './DDPG-BA2C-r1s+180x320-batch32-tau1e-3-lr1e-4-w1'
+	#model_path = './dummy'
 	
 
 
 
-num_workers = 4#8
+num_workers = 1
 lr=1e-4
 
 if not os.path.exists(model_path):
@@ -1207,7 +1208,7 @@ class Worker():
 						#self.rBuffer.append(episode_buffer)
 						for el in episode_buffer :
 							self.rBuffer.append(el)
-						if len(self.rBuffer) > maxReplayBufferSize :
+						while len(self.rBuffer) > maxReplayBufferSize :
 							del self.rBuffer[0]
 
 						# Periodically save gifs of episodes, model parameters, and summary statistics.
