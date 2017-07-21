@@ -4,7 +4,7 @@
 useGAZEBO = False
 
 show = False
-load_model = False
+load_model = True
 
 import threading
 import multiprocessing
@@ -28,7 +28,6 @@ else :
 import cv2
 import os
 import numpy as np
-from time import time
 
 
 if useGAZEBO :
@@ -78,9 +77,8 @@ if useGAZEBO == False :
 h_size = 256
 
 a_size = 1
-#model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
 
-model_path = './test'
+model_path = './b128-w4-tau1e-3-lr1e-4-v1'
 
 eps_greedy_prob = 0.3
 if useGAZEBO :
@@ -97,7 +95,7 @@ if useGAZEBO :
 
 
 
-num_workers = 1
+num_workers = 4#8
 lr=1e-4
 
 if not os.path.exists(model_path):
@@ -169,26 +167,6 @@ def update_target_graph(from_scope,to_scope,updateTau=1e-3):
 		op_holder.append(to_var.assign( tf.multiply(updateTau,from_var)+tf.multiply( (1.0-updateTau), to_var) ))
 	return op_holder
 
-def update_thread_graph(from_scope,to_scope,updateTau=1e0):
-	from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, from_scope)
-	to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, to_scope)
-	print('UPDATE {} towards {} with tau = {}'.format(to_scope,from_scope,updateTau) )
-	op_holder = []
-	for from_var,to_var in zip(from_vars,to_vars):
-		op_holder.append(to_var.assign( tf.multiply(updateTau,from_var)+tf.multiply( (1.0-updateTau), to_var) ))
-	return op_holder
-
-
-
-# NEED :
-# 1- update each thread target network to base target network with tau=1
-# 2- update each thread network to base network with tau=1
-# 3- update the base target network towards the base master network with tau=updateTau=1e-3
-
-
-
-
-
 # Processes Doom screen image to produce cropped and resized image. 
 def process_frame(frame):
 	#s = frame[10:-10,30:-30]
@@ -242,8 +220,7 @@ class AC_Network():
 		else :
 			#inputs, actions, policy, Vvalue, Qvalue, keep_prob, phase
 			self.inputs, self.actions, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase = self.create_network(self.scope)
-			if self.scope == 'global' :
-				self.t_inputs, self.t_actions, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network('target')
+			self.t_inputs, self.t_actions, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network(self.scope+'_target')
 		
 		self.build_loss_functions()
 		
@@ -776,8 +753,8 @@ class AC_Network():
 			#
 			
 			#Gradients :
-			qreshaped = tf.reshape(self.Qvalue,[-1])
-			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - qreshaped))
+			#qreshaped = tf.reshape(self.Qvalue,[-1])
+			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - self.Qvalue))
 			self.Qvalue_loss = tf.losses.mean_squared_error(labels=self.target_qvalue,predictions=self.Qvalue)
 			#self.Qvalue_loss = tf.squared_difference(self.target_qvalue,self.Qvalue)
 			# MINIMIZATION/MAXIMIZATION OF THE REWARD(PENALTY..) :
@@ -792,36 +769,27 @@ class AC_Network():
 
 			#Get gradients from local network using local losses
 			local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
-			global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global/')
-			local_vars_actor = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/actor')
-			local_vars_critic = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/critic')
-			global_vars_actor = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global/actor')
-			global_vars_critic = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global/critic')
+			#local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/actor')
 			self.var_norms = tf.global_norm(local_vars)
-			self.global_var_norms = tf.global_norm(global_vars)
 			
 			# PLACEHOLDER :
 			self.critic_gradients_action = tf.placeholder(tf.float32,[None,self.a_size],name='critic_gradients_action')#tf.gradients(tf.reduce_sum(self.Qvalue),self.actions)
 			#
 			
 			self.critic_gradients_action_op = tf.gradients(self.Qvalue,self.actions)
-			self.actor_gradients = tf.gradients(self.policy,local_vars_actor, -self.critic_gradients_action )
+			self.actor_gradients = tf.gradients(self.policy,local_vars, -self.critic_gradients_action )
 			
-			self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars_critic, 1.0 )# tf.constant(-1.0) )
+			actor_grads,self.actor_grad_norms = tf.clip_by_global_norm(self.actor_gradients,40.0)
+			critic_grads,self.critic_grad_norms = tf.clip_by_global_norm(self.critic_gradients_action_op,40.0)
 			
 			'''
+			self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars)
 			for grad in self.critic_gradients :
 				if grad is not None :
 					grad = tf.multiply( grad, -1.0 )
+			self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients(zip(self.critic_gradients,global_vars)), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
 			'''
-			
-			actor_grads,self.actor_grad_norms = tf.clip_by_global_norm(self.actor_gradients,40.0)
-			critic_grads,self.critic_grad_norms = tf.clip_by_global_norm(self.critic_gradients,40.0)
-			
-			
-			#self.apply_grads = { 'critic':self.trainer['critic'].minimize(self.Qvalue_loss), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
-			#self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
-			self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars_critic) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars_actor)) }
+			self.apply_grads = { 'critic':self.trainer['critic'].minimize(self.Qvalue_loss), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,local_vars)) }
 			
 			
 	def predict_actor(self, sess, inputs) :
@@ -880,12 +848,10 @@ class AC_Network():
 
 
 class Worker():
-	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1, nbrStepPerReplay=64, useGAZEBO=True):
+	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1000, nbrStepPerReplay=64, useGAZEBO=True):
 		self.useGAZEBO = useGAZEBO
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
-		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
-		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=useGAZEBO)
 		self.number = name        
 		self.model_path = model_path
 		self.global_episodes = global_episodes
@@ -895,6 +861,7 @@ class Worker():
 		self.episode_lengths = []
 		self.episode_mean_values = []
 		self.episode_max_values = []
+		self.episode_min_values = []
 		
 		self.summary_writer = tf.summary.FileWriter(self.model_path+"/training_logs/train_"+str(self.number))
 		self.test_summary_writer = tf.summary.FileWriter(self.model_path+"/training_logs/train_test"+str(self.number))
@@ -902,10 +869,9 @@ class Worker():
 		self.rec = rec
 		self.updateT = updateT
 		
-		# let us update the local network towards the base global master network :
-		self.update_ops_thread = update_thread_graph(self.name,'global',1.0)
-		self.update_ops_target_init = update_target_graph('global','target',1.0)
-		self.update_ops_target = update_target_graph('global','target',self.master_network.tau)
+		# let us update the target towards the global network :
+		self.update_ops_init = update_target_graph('global','global_target',1.0)
+		self.update_ops = update_target_graph('global','global_target',self.master_network.tau)
 		
 		#self.actions = self.actions = np.identity(a_size,dtype=bool).tolist()
 		self.actions = np.identity(a_size,dtype=np.float32).tolist()
@@ -942,67 +908,82 @@ class Worker():
 				self.local_AC.keep_prob:self.local_AC.dropoutK,
 				self.local_AC.phase:True}
 		else :
-			if self.number == 0 :
-				a_out = self.master_network.predict_actor(sess, vobs)
-				feed_dict = {self.master_network.inputs:vobs,
-					self.master_network.actions:a_out,
-					self.master_network.target_qvalue:self.target_qvalue_num,
-					self.master_network.keep_prob:self.master_network.dropoutK,
-					self.master_network.phase:False}
-				critic_gradients_action, c_g_n = sess.run([self.master_network.critic_gradients_action_op, self.master_network.critic_grad_norms],
-					feed_dict = feed_dict)
-					#/batch_size
-					#TODO : decide about the importance of the division by batch_size....
-				feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
-					self.master_network.inputs:vobs,
-					self.master_network.actions:actions,
-					self.master_network.keep_prob:self.master_network.dropoutK,
-					self.master_network.phase:True,
-					self.master_network.critic_gradients_action:critic_gradients_action[0]}
+			'''
+			feed_dict = {self.local_AC.inputs:vobs,
+				self.local_AC.actions:actions,
+				self.local_AC.keep_prob:self.local_AC.dropoutK,
+				self.local_AC.phase:False}
+			critic_gradients_action = sess.run([self.local_AC.critic_gradients_action_op],
+				feed_dict = feed_dict)[0][0]
+				#TODO : decide about the importance of the division by batch_size....
+			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
+				self.local_AC.inputs:vobs,
+				self.local_AC.actions:actions,
+				self.local_AC.keep_prob:self.local_AC.dropoutK,
+				self.local_AC.phase:True,
+				self.local_AC.critic_gradients_action:critic_gradients_action}
+			v_l,p_l,v_n,_,_ = sess.run([self.local_AC.Qvalue_loss,
+				self.local_AC.policy_loss,
+				#self.local_AC.entropy,
+				#self.local_AC.grad_norms,
+				self.local_AC.var_norms,
+				self.local_AC.apply_grads['critic'],
+				self.local_AC.apply_grads['actor']],
+				feed_dict=feed_dict)
+			'''
+			a_out = self.master_network.predict_actor(sess, vobs)
+			feed_dict = {self.master_network.inputs:vobs,
+				self.master_network.actions:a_out,
+				self.master_network.keep_prob:self.master_network.dropoutK,
+				self.master_network.phase:False}
+			critic_gradients_action, c_g_n = sess.run([self.master_network.critic_gradients_action_op, self.master_network.critic_grad_norms],
+				feed_dict = feed_dict)
+				#/batch_size
+				#TODO : decide about the importance of the division by batch_size....
 			
-				v_l,p_l, a_g_n, v_n,_,_ = sess.run([self.master_network.Qvalue_loss,
-					self.master_network.policy_loss,
-					#self.master_network.entropy,
-					self.master_network.actor_grad_norms,
-					self.master_network.var_norms,
-					self.master_network.apply_grads['critic'],
-					self.master_network.apply_grads['actor']],
-					feed_dict=feed_dict)
-				
-			else :
-				a_out = self.local_network.predict_actor(sess, vobs)
-				feed_dict = {self.local_network.inputs:vobs,
-					self.local_network.actions:a_out,
-					self.local_network.target_qvalue:self.target_qvalue_num,
-					self.local_network.keep_prob:self.master_network.dropoutK,
-					self.local_network.phase:False}
-				critic_gradients_action, c_g_n = sess.run([self.local_network.critic_gradients_action_op, self.local_network.critic_grad_norms],
-					feed_dict = feed_dict)
-					#/batch_size
-					#TODO : decide about the importance of the division by batch_size....
-				feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
-					self.local_network.inputs:vobs,
-					self.local_network.actions:actions,
-					self.local_network.keep_prob:self.master_network.dropoutK,
-					self.local_network.phase:True,
-					self.local_network.critic_gradients_action:critic_gradients_action[0]}
+			# TRAIN CRITIC :
+			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
+				self.master_network.inputs:vobs,
+				self.master_network.actions:actions,
+				self.master_network.keep_prob:self.master_network.dropoutK,
+				self.master_network.phase:True}
+		
+			v_l, v_n,_ = sess.run([self.master_network.Qvalue_loss,
+				self.master_network.var_norms,
+				self.master_network.apply_grads['critic']],
+				feed_dict=feed_dict)
+			#TRAIN ACTOR :
+			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
+				self.master_network.inputs:vobs,
+				self.master_network.actions:a_out,
+				self.master_network.keep_prob:self.master_network.dropoutK,
+				self.master_network.phase:True,
+				self.master_network.critic_gradients_action:critic_gradients_action[0]}
+		
+			p_l, a_g_n,_ = sess.run([self.master_network.policy_loss,
+				self.master_network.actor_grad_norms,
+				self.master_network.apply_grads['actor']],
+				feed_dict=feed_dict)
+			'''
+			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
+				self.master_network.inputs:vobs,
+				self.master_network.actions:actions,
+				self.master_network.keep_prob:self.master_network.dropoutK,
+				self.master_network.phase:True,
+				self.master_network.critic_gradients_action:critic_gradients_action[0]}
 			
-				v_l,p_l, a_g_n, v_n,_,_ = sess.run([self.local_network.Qvalue_loss,
-					self.local_network.policy_loss,
-					#self.master_network.entropy,
-					self.local_network.actor_grad_norms,
-					self.local_network.var_norms,
-					self.local_network.apply_grads['critic'],
-					self.local_network.apply_grads['actor']],
-					feed_dict=feed_dict)
-				
-		
-		# UPDATE OF THE THREAD NETWORK TO BASE NETWORK :
-		if self.number != 0 :
-			sess.run(self.update_ops_thread)
-		
-		# UPDATE OF THE TARGET NETWORK:
-		sess.run(self.update_ops_target)
+			v_l,p_l, a_g_n, v_n,_,_ = sess.run([self.master_network.Qvalue_loss,
+				self.master_network.policy_loss,
+				#self.master_network.entropy,
+				self.master_network.actor_grad_norms,
+				self.master_network.var_norms,
+				self.master_network.apply_grads['critic'],
+				self.master_network.apply_grads['actor']],
+				feed_dict=feed_dict)
+			'''
+			
+		# UPDATE OF THE TARGET :
+		sess.run(self.update_ops)
 							
 				
 		return v_l/batch_size, p_l/batch_size, a_g_n, c_g_n, v_n
@@ -1021,11 +1002,8 @@ class Worker():
 			#Let us first synchronize this worker with the global network :
 			# or we synchronize the target with the global network entirely...
 			if self.number == 0:
-				sess.run(self.update_ops_target_init)
+				sess.run(self.update_ops_init)
 				print('Target synchronized...')
-			else :
-				sess.run(self.update_ops_thread)
-				print('Thread {} synchronized...'.format(self.number))
 			
 			while not coord.should_stop():
 				try :
@@ -1059,11 +1037,8 @@ class Worker():
 						remainingSteps = max_episode_length   
 						actions = []   
 						a_noise = 0.0
-						time_log = 0
-						time_log_print = 50
-						time_mean = 0.0
 						while d == False :
-							start = time()
+							start = timeit.timeit()
 							remainingSteps -= 1
 							
 							#Take an action using probabilities from policy network output.
@@ -1109,7 +1084,7 @@ class Worker():
 								
 								
 							#EXPLORATION NOISE :
-							
+							'''
 							eps_greedy_prob = 0.4/(1+episode_count/10)
 							if np.random.rand() < eps_greedy_prob :
 								scale = self.master_network.a_bound/1.0
@@ -1124,7 +1099,7 @@ class Worker():
 							sigma = 0.3
 							a_noise += theta*(0.0-a_noise)+sigma*np.random.normal(loc=0.0,scale=scale)
 							a[0] += a_noise
-							'''
+							
 						
 
 							if useGAZEBO :
@@ -1182,16 +1157,8 @@ class Worker():
 							if self.useGAZEBO :
 								LoopRate.sleep()
 								
-							end = time()
-							if time_log == time_log_print :
-								time_log = 0
-								time_mean += end-start
-								time_mean /= time_log_print
-								print('EXECUTION TIME : {}'.format(time_mean) )
-								time_mean = 0.0
-							else :
-								time_mean += end - start
-								time_log += 1
+							end = timeit.timeit()
+							#print('EXECUTION TIME : {}, done: {}'.format(end - start,d) )
 
 						#END OF EPISODE WHILE LOOP...
 						
@@ -1207,6 +1174,7 @@ class Worker():
 						self.episode_lengths.append(episode_step_count)
 						self.episode_mean_values.append(np.mean(episode_values))
 						self.episode_max_values.append(np.max(episode_values))
+						self.episode_min_values.append(np.min(episode_values))
 
 						#Let us add this episode_buffer to the replayBuffer :
 						#self.rBuffer.append(episode_buffer)
@@ -1228,10 +1196,11 @@ class Worker():
 							print ("Saved Model")
 
 						
+						
 						sess.run(self.increment)
 
 					#END OF IF SELF.NUMBER == 0
-					
+				
 					# Update the network using the experience replay buffer:
 					if len(self.rBuffer) > 0:
 						a1 = None
@@ -1261,26 +1230,24 @@ class Worker():
 							self.local_AC.keep_prob:1.0,
 							self.local_AC.phase:False})[0,0]
 						else :
-							if self.number != 0 :
-								a1 = self.local_network.predict_actor_target( sess, s1)
-								q1 = self.local_network.predict_critic_target( sess, s1, a1)
-							else :
-								a1 = self.master_network.predict_actor_target( sess, s1)
-								q1 = self.master_network.predict_critic_target( sess, s1, a1)
-						
+							a1 = self.master_network.predict_actor_target( sess, s1)
+							q1 = self.master_network.predict_critic_target( sess, s1, a1)
 						
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train( rollout,sess,gamma,q1)
+						
 						
 						if self.number == 0 :
 							mean_reward = np.mean(self.episode_rewards[-5:])
 							mean_length = np.mean(self.episode_lengths[-5:])
 							mean_value = np.mean(self.episode_mean_values[-5:])
 							max_value = np.mean(self.episode_max_values[-5:])
+							min_value = np.mean(self.episode_min_values[-5:])
 							summary = tf.Summary()
 							summary.value.add(tag='Perf/Reward', simple_value=float(mean_reward))
 							summary.value.add(tag='Perf/Length', simple_value=float(mean_length))
 							summary.value.add(tag='Perf/Value', simple_value=float(mean_value))
 							summary.value.add(tag='Perf/MaxValue', simple_value=float(max_value))
+							summary.value.add(tag='Perf/MinValue', simple_value=float(min_value))
 							summary.value.add(tag='Losses/Value Loss', simple_value=float(v_l))
 							summary.value.add(tag='Losses/Policy Loss', simple_value=float(p_l))
 							#summary.value.add(tag='Losses/Entropy', simple_value=float(e_l))

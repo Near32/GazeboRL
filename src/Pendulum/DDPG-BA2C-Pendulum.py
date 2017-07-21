@@ -77,7 +77,11 @@ if useGAZEBO == False :
 h_size = 256
 
 a_size = 1
-model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
+
+#model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
+model_path = './test'
+#model_path = './test1'
+
 eps_greedy_prob = 0.3
 if useGAZEBO :
 	a_size = 2	
@@ -751,8 +755,8 @@ class AC_Network():
 			#
 			
 			#Gradients :
-			qreshaped = tf.reshape(self.Qvalue,[-1])
-			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - qreshaped))
+			#qreshaped = tf.reshape(self.Qvalue,[-1])
+			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - self.Qvalue))
 			self.Qvalue_loss = tf.losses.mean_squared_error(labels=self.target_qvalue,predictions=self.Qvalue)
 			#self.Qvalue_loss = tf.squared_difference(self.target_qvalue,self.Qvalue)
 			# MINIMIZATION/MAXIMIZATION OF THE REWARD(PENALTY..) :
@@ -766,8 +770,8 @@ class AC_Network():
 			self.loss = 0.5*self.Qvalue_loss + 0.5*self.policy_loss + self.lambda_regL2*self.l2_loss #- 0.01*self.entropy
 
 			#Get gradients from local network using local losses
-			#local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
-			local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/actor')
+			local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+			#local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope+'/actor')
 			self.var_norms = tf.global_norm(local_vars)
 			
 			# PLACEHOLDER :
@@ -859,6 +863,7 @@ class Worker():
 		self.episode_lengths = []
 		self.episode_mean_values = []
 		self.episode_max_values = []
+		self.episode_min_values = []
 		
 		self.summary_writer = tf.summary.FileWriter(self.model_path+"/training_logs/train_"+str(self.number))
 		self.test_summary_writer = tf.summary.FileWriter(self.model_path+"/training_logs/train_test"+str(self.number))
@@ -938,6 +943,30 @@ class Worker():
 				#/batch_size
 				#TODO : decide about the importance of the division by batch_size....
 			
+			# TRAIN CRITIC :
+			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
+				self.master_network.inputs:vobs,
+				self.master_network.actions:actions,
+				self.master_network.keep_prob:self.master_network.dropoutK,
+				self.master_network.phase:True}
+		
+			v_l, v_n,_ = sess.run([self.master_network.Qvalue_loss,
+				self.master_network.var_norms,
+				self.master_network.apply_grads['critic']],
+				feed_dict=feed_dict)
+			#TRAIN ACTOR :
+			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
+				self.master_network.inputs:vobs,
+				self.master_network.actions:a_out,
+				self.master_network.keep_prob:self.master_network.dropoutK,
+				self.master_network.phase:True,
+				self.master_network.critic_gradients_action:critic_gradients_action[0]}
+		
+			p_l, a_g_n,_ = sess.run([self.master_network.policy_loss,
+				self.master_network.actor_grad_norms,
+				self.master_network.apply_grads['actor']],
+				feed_dict=feed_dict)
+			'''
 			feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
 				self.master_network.inputs:vobs,
 				self.master_network.actions:actions,
@@ -953,6 +982,7 @@ class Worker():
 				self.master_network.apply_grads['critic'],
 				self.master_network.apply_grads['actor']],
 				feed_dict=feed_dict)
+			'''
 			
 		# UPDATE OF THE TARGET :
 		sess.run(self.update_ops)
@@ -1056,7 +1086,7 @@ class Worker():
 								
 								
 							#EXPLORATION NOISE :
-							
+							'''
 							eps_greedy_prob = 0.4/(1+episode_count/10)
 							if np.random.rand() < eps_greedy_prob :
 								scale = self.master_network.a_bound/1.0
@@ -1071,7 +1101,7 @@ class Worker():
 							sigma = 0.3
 							a_noise += theta*(0.0-a_noise)+sigma*np.random.normal(loc=0.0,scale=scale)
 							a[0] += a_noise
-							'''
+							
 						
 
 							if useGAZEBO :
@@ -1146,6 +1176,7 @@ class Worker():
 						self.episode_lengths.append(episode_step_count)
 						self.episode_mean_values.append(np.mean(episode_values))
 						self.episode_max_values.append(np.max(episode_values))
+						self.episode_min_values.append(np.min(episode_values))
 
 						#Let us add this episode_buffer to the replayBuffer :
 						#self.rBuffer.append(episode_buffer)
@@ -1212,11 +1243,13 @@ class Worker():
 							mean_length = np.mean(self.episode_lengths[-5:])
 							mean_value = np.mean(self.episode_mean_values[-5:])
 							max_value = np.mean(self.episode_max_values[-5:])
+							min_value = np.mean(self.episode_min_values[-5:])
 							summary = tf.Summary()
 							summary.value.add(tag='Perf/Reward', simple_value=float(mean_reward))
 							summary.value.add(tag='Perf/Length', simple_value=float(mean_length))
 							summary.value.add(tag='Perf/Value', simple_value=float(mean_value))
 							summary.value.add(tag='Perf/MaxValue', simple_value=float(max_value))
+							summary.value.add(tag='Perf/MinValue', simple_value=float(min_value))
 							summary.value.add(tag='Losses/Value Loss', simple_value=float(v_l))
 							summary.value.add(tag='Losses/Policy Loss', simple_value=float(p_l))
 							#summary.value.add(tag='Losses/Entropy', simple_value=float(e_l))

@@ -52,14 +52,14 @@ if useGAZEBO :
 	time.sleep(5)
 	env.reset()
 	env.setPause(False)
-	LoopRate = rospy.Rate(200)
+	LoopRate = rospy.Rate(60)
 
-nbrskipframe = 4
+nbrskipframe = 3
 if useGAZEBO :
 	#img_size = (180,320,3)
 	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
-	img_size = (240,320,nbrskipframe)
+	img_size = (60,80,nbrskipframe)
 else :
 	nbrskipframe = 1
 	img_size = (84,84,nbrskipframe)
@@ -69,11 +69,11 @@ rec = False
 # In[35]:
 
 a_bound = 2.0
-maxReplayBufferSize = 2500
+maxReplayBufferSize = 20000#2500
 max_episode_length = 400
 updateT = 1
 updateTau = 1e-3
-nbrStepsPerReplay = 32
+nbrStepsPerReplay = 16
 gamma = 0.99 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
@@ -90,7 +90,7 @@ model_path = './DDPG-BA2C-batch8-tau1e-3-lr1e-4-w4'
 eps_greedy_prob = 0.3
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s+240x320-sf4-batch32-tau1e-3-lr1e-4-w1'
+	model_path = './DDPG-BA2C-r1s+60x160-sf3-batch16-tau1e-3-lr1e-4-w1'
 	#model_path = './DDPG-BA2C-r1s+120x320-sf2-batch8-tau1e-3-lr1e-4-w1'
 	#model_path = './DDPG-BA2C-r1s+180x320-sf4-batch32-tau1e-3-lr1e-4-w4'
 	
@@ -520,11 +520,11 @@ class AC_Network():
 				# CONV LAYER 1 :
 				shape_input = imageIn.get_shape().as_list()
 				input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-				nbr_filter1 = 16
+				nbr_filter1 = 32
 				output_dim1 = [ nbr_filter1]
 				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
 				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
-				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=12, stride=6,padding='SAME')
+				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=8, stride=4,padding='SAME')
 				rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
 		
 				#LAYER STN 1 :
@@ -554,9 +554,10 @@ class AC_Network():
 				#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
 				# CONV LAYER 3 :
-				nbr_filter3 = 64
+				nbr_filter3 = 32
 				output_dim3 = [ nbr_filter3]
-				relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
+				#relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
+				relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=tf.nn.relu, filter_size=3, stride=1, padding='SAME')
 				rmpc3_do = tf.nn.dropout(relumaxpoolconv3,keep_prob)
 		
 				#LAYER STN 3 :
@@ -1251,7 +1252,7 @@ class Worker():
 					#END OF IF SELF.NUMBER == 0
 				
 					# Update the network using the experience replay buffer:
-					if len(self.rBuffer) > maxReplayBufferSize/2:
+					if len(self.rBuffer) > self.nbrStepPerReplay*2:
 						a1 = None
 						#idxEpisodes = np.random.choice(len(self.rBuffer),self.nbrStepPerReplay)
 						#idxSteps = [ np.random.randint(low=0,high=len(self.rBuffer[idx]) ) for idx in idxEpisodes ]
