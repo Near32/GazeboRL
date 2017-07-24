@@ -78,9 +78,7 @@ h_size = 256
 
 a_size = 1
 
-#model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
-model_path = './test'
-#model_path = './test1'
+model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
 
 eps_greedy_prob = 0.3
 if useGAZEBO :

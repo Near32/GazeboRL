@@ -69,7 +69,7 @@ rec = False
 # In[35]:
 
 a_bound = 2.0
-maxReplayBufferSize = 20000#2500
+maxReplayBufferSize = 40000#2500
 max_episode_length = 400
 updateT = 1
 updateTau = 1e-3
@@ -90,14 +90,14 @@ model_path = './DDPG-BA2C-batch8-tau1e-3-lr1e-4-w4'
 eps_greedy_prob = 0.3
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s+60x160-sf3-batch16-tau1e-3-lr1e-4-w1'
+	model_path = './DDPG-BA2C-r1s+60x160-sf3-batch16-tau1e-3-lr1e-4-w16'
 	#model_path = './DDPG-BA2C-r1s+120x320-sf2-batch8-tau1e-3-lr1e-4-w1'
 	#model_path = './DDPG-BA2C-r1s+180x320-sf4-batch32-tau1e-3-lr1e-4-w4'
 	
 
 
 
-num_workers = 1
+num_workers = 16
 lr=1e-4
 
 if not os.path.exists(model_path):

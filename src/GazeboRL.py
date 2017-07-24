@@ -12,12 +12,13 @@ from sensor_msgs.msg import Image
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float64
+import os
 
-def init_roscore() :
-	subprocess.Popen(['roscore'])
+def init_roscore(env,port):
+	subprocess.Popen(['roscore -p '+str(port)+' &'],shell=True,env=env)
 
 class GazeboRL :
-	def __init__(self,commands,observationsList=None,publishersList=None, rewardsList=None):
+	def __init__(self,commands,observationsList=None,publishersList=None, rewardsList=None, env=None):
 		'''
 		commands : dictionnary of list of string/commands to apply to subprocess :
 		- launch : 
@@ -28,8 +29,6 @@ class GazeboRL :
 		publishersList : list of string of the name of the topic to publish to : same order as commands['pubs']
 		'''
 		
-		rospy.init_node('GazeboRL_node', anonymous=False)
-		rospy.on_shutdown(self.close)
 		
 		#if commands.has_key('subs') :
 		if 'subs' in commands :
@@ -43,6 +42,10 @@ class GazeboRL :
 			if (len(pubc) and publishersList is None) or len(pubc) != len(publishersList) :
 				raise ValueError('List of publishers and list of type of data to publish are not accorded.')
 		
+		self.env = os.environ
+		if env is not None :
+			self.env = env
+			
 		self.atShutdownKill = list()
 		
 		self.commands = commands
@@ -63,18 +66,24 @@ class GazeboRL :
 		self.action = None
 		
 		self.rMutex = Lock()
-		
+	
+	def init_node(self) :
+		rospy.init_node('GazeboRL_node', anonymous=False)
+		rospy.on_shutdown(self.close)
+			
 	def make(self) :
 		#ROSLAUNCHING with commands dictionary commands['launch'] = list of strings...
 		for command in self.commands['launch'] :
 			#subprocess.call( command, shell=True )
-			p = subprocess.Popen( command.split())
+			#p = subprocess.Popen( command.split())
+			#p = subprocess.Popen( command.split(), shell=True, env=self.env)
+			p = subprocess.Popen( command, shell=True, env=self.env)
 			self.atShutdownKill.append(p)
 			
 		#p.wait()
-		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : LAUNCHING...\n")
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT "+str(self.port)+" : LAUNCHING...\n")
 	
-		
+		self.init_node()
 		self.subscribtions()
 		self.publishersCreations()
 		
@@ -140,11 +149,13 @@ class GazeboRL :
 	
 	def setPause(self,pause=True) :
 		if pause==True :
-			subprocess.Popen(['rosservice', 'call', '/gazebo/pause_physics'])
-			rospy.loginfo("\nGAZEBO RL : ENVIRONMENT PHYSICS : PAUSED.\n")
+			#subprocess.Popen(['rosservice', 'call', '/gazebo/pause_physics'], shell=True, env=self.env)
+			subprocess.Popen(['rosservice call /gazebo/pause_physics'], shell=True, env=self.env)
+			rospy.loginfo("\nGAZEBO RL : ENVIRONMENT "+str(self.port)+" PHYSICS : PAUSED.\n")
 		else :
-			subprocess.Popen(['rosservice', 'call', '/gazebo/unpause_physics'])
-			rospy.loginfo("\nGAZEBO RL : ENVIRONMENT PHYSICS : UNPAUSED.\n")
+			#subprocess.Popen(['rosservice', 'call', '/gazebo/unpause_physics'], shell=True, env=self.env)
+			subprocess.Popen(['rosservice call /gazebo/unpause_physics'], shell=True, env=self.env)
+			rospy.loginfo("\nGAZEBO RL : ENVIRONMENT "+str(self.port)+" PHYSICS : UNPAUSED.\n")
 	
 	
 	def reset(self) :
@@ -153,9 +164,10 @@ class GazeboRL :
 		self.setPause(True)
 		time.sleep(1)
 		
-		subprocess.Popen(['rosservice', 'call', '/gazebo/reset_world'])
+		#subprocess.Popen(['rosservice', 'call', '/gazebo/reset_world'], shell=True, env=self.env)
+		subprocess.Popen(['rosservice call /gazebo/reset_world'], shell=True, env=self.env)
 		#subprocess.Popen(['rosservice', 'call', '/gazebo/reset_simulation'])
-		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : RESET.\n")
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT "+str(self.port)+" : RESET.\n")
 		time.sleep(1)
 		
 		self.setPause(False)
@@ -168,13 +180,24 @@ class GazeboRL :
 		#for proc in self.atShutdownKill :
 		#	proc.kill()
 			
+		'''
 		command = 'pkill roslaunch'
 		subprocess.Popen( command.split())
 		command = 'pkill gzclient'
 		subprocess.Popen( command.split())
 		command = 'pkill gzserver'
 		subprocess.Popen( command.split())
-		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : CLOSED.\n")
+		'''
+		''''
+		command = "kill -9 $(ps | grep \"roslaunch\" | awk \"{ print $1 }\")"
+		subprocess.Popen( command, shell=True, env=self.env)
+		command = "kill -9 $(ps | grep \"gzserver\" | awk \"{ print $1 }\")"
+		subprocess.Popen( command, shell=True, env=self.env)
+		
+		command = "pkill gzclient"
+		subprocess.Popen( command, shell=True, env=self.env)
+		'''
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT "+str(self.port)+" : CLOSED.\n")
 		return 
 		
 
@@ -189,12 +212,20 @@ class GazeboRL :
 
 
 class Swarm1GazeboRL(GazeboRL) :
-	def __init__(self):
+	def __init__(self,port=11311):
 		self.continuousActions = False
+		
+		self.port = port
+		self.envdict = os.environ
+		self.envdict["ROS_MASTER_URI"] = 'http://localhost:'+str(self.port)
+		self.envdict["GAZEBO_MASTER_URI"]='http://localhost:'+str(self.port+40)
+		
+		init_roscore(self.envdict,self.port)
 		
 		commands = {'launch': None}
 		launchCom = []
-		launchCom.append('roslaunch OPUSim robot1swarm.launch')
+		#launchCom.append('roslaunch OPUSim robot1swarm.launch')
+		launchCom.append('roslaunch -p '+str(self.port)+' OPUSim robot1swarm.launch')
 		#launchCom.append('python /rosbuild_ws/sandbox/GazeboRL/src/reward.py -r 2.0 -v 1.0')
 		#launchCom.append('roslaunch OPUSim robot2swarm.launch')
 		commands['launch'] = launchCom
@@ -229,7 +260,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		for topic in rewardsList :
 			self.rewardsQueues[topic] = []
 		
-		GazeboRL.__init__(self,commands,observationsList,publishersList,rewardsList)
+		GazeboRL.__init__(self,commands,observationsList,publishersList,rewardsList, env=self.envdict)
 		
 		
 	
@@ -346,15 +377,15 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.setPause(True)
 		time.sleep(1)
 		
-		subprocess.Popen(['rosservice', 'call', '/gazebo/reset_world'])
+		subprocess.Popen(['rosservice call /gazebo/reset_world'], shell=True, env=self.env)
+		#subprocess.Popen(['rosservice call /gazebo/reset_world'], env=self.env)
 		#subprocess.Popen(['rosservice', 'call', '/gazebo/reset_simulation'])
-		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT : RESET.\n")
+		rospy.loginfo("\nGAZEBO RL : ENVIRONMENT "+str(self.port)+" : RESET.\n")
 		time.sleep(1)
 		
 		self.setPause(False)
 		
 		self.randomInitialization()
-		
 		
 		self.rMutex.release()
 		
@@ -381,13 +412,16 @@ class Swarm1GazeboRL(GazeboRL) :
 				distance = np.sqrt( (randx-obs[0])**2+(randy-obs[1])**2 )
 				if distance < sizeobs :
 					notokay = True
-					
-					
-	 	randtheta = np.random.uniform(low=-3.1415,high=3.1415)
-	 	
-	 	#subprocess.Popen(['rosservice', 'call', '/gazebo/get_model_state', '\'model_name: robot_0\' ', '\'relative_entity_name: world\' '])
+		
+		randtheta = np.random.uniform(low=-3.1415,high=3.1415)
+		
+		#subprocess.Popen(['rosservice', 'call', '/gazebo/get_model_state', '\'model_name: robot_0\' ', '\'relative_entity_name: world\' '])
 		#subprocess.Popen(['rosservice', 'call', '/gazebo/get_world_properties' ])
-		subprocess.Popen(['rosservice', 'call', '/gazebo/set_model_state', "{model_state: { model_name: "+robot_name+", pose: { position: { x: "+str(randx)+", y: "+str(randy)+", z: 0 }, orientation: {x: 0, y: 0, z: "+str(sin(randtheta/2.0))+", w: "+str(cos(randtheta/2.0))+" } }, twist: { linear: {x: 0.0 , y: 0 ,z: 0 } , angular: { x: 0.0 , y: 0 , z: 0.0 } } , reference_frame: world }} "])		
+		#subprocess.Popen(['rosservice', 'call', '/gazebo/set_model_state', "{model_state: { model_name: "+robot_name+", pose: { position: { x: "+str(randx)+", y: "+str(randy)+", z: 0 }, orientation: {x: 0, y: 0, z: "+str(sin(randtheta/2.0))+", w: "+str(cos(randtheta/2.0))+" } }, twist: { linear: {x: 0.0 , y: 0 ,z: 0 } , angular: { x: 0.0 , y: 0 , z: 0.0 } } , reference_frame: world }} "], shell=True, env=self.env)		
+		#subprocess.Popen(['rosservice call /gazebo/set_model_state {model_state: { model_name: '+robot_name+', pose: { position: { x: '+str(randx)+', y: '+str(randy)+', z: 0 }, orientation: {x: 0, y: 0, z: '+str(sin(randtheta/2.0))+', w: '+str(cos(randtheta/2.0))+' } }, twist: { linear: {x: 0.0 , y: 0 ,z: 0 } , angular: { x: 0.0 , y: 0 , z: 0.0 } } , reference_frame: world }} '], shell=True, env=self.env)		
+		command = 'rosservice call /gazebo/set_model_state \"{ model_state: { model_name: '+robot_name+', pose: { position: { x: '+str(randx)+', y: '+str(randy)+', z: 0 }, orientation: {x: 0, y: 0, z: '+str(sin(randtheta/2.0))+', w: '+str(cos(randtheta/2.0))+' } }, twist: { linear: {x: 0.0 , y: 0 ,z: 0 } , angular: { x: 0.0 , y: 0 , z: 0.0 } } , reference_frame: world }}\" '
+		subprocess.Popen(command, shell=True, env=self.env)		
+		#rospy.loginfo("\n"+"--- "+command+" ---"+"\n")
 		
 			
 	def callbackODOMETRY(self, odom ) :

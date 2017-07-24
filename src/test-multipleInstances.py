@@ -21,38 +21,41 @@ def initAgent():
 	model = NN( filepath_base,nbrinput=nbrinput,nbroutput=nbroutput,lr=lr,filepathin=None)
 	model.init()
 	return model
-	
-#commands = {'launch': None}
-#launchCom = []
 
-#launchCom.append('rosrun gazebo_ros spawn_model -file /home/kevin/rosbuild_ws/sandbox/GazeboRL/object.urdf -urdf -z 1 -model my_object')
-#launchCom.append('roslaunch gazebo_ros empty_world.launch paused:=true use_sim_time:=false gui:=true throttled:=false headless:=false debug:=false')
-#launchCom.append('rosrun gazebo_ros spawn_model -file /home/kevin/rosbuild_ws/sandbox/OPUSim/models/target_model/model.sdf -sdf -z 1 -x 0 -y 0 -model my_target')
 
-#launchCom.append('roslaunch OPUSim robot1swarm.launch')
-#launchCom.append('roslaunch OPUSim robot2swarm.launch')
-
-#commands['launch'] = launchCom
-
-#env = GazeboRL(commands)
-
-#init_roscore()
-
-env = Swarm1GazeboRL(port=11315)
+port = 11315
+env = Swarm1GazeboRL(port=port)
+port += 1
 env.make()
+
+
+env1 = Swarm1GazeboRL(port=port)
+port += 1
+env1.make()
+
+
 agent = initAgent()
 print('\n\nwait for 5 sec...\n\n')
 time.sleep(5)
+
 env.setPause(False)
+env1.setPause(False)
 
 env.reset()
+env1.reset()
+
+env.setPause(False)
+env1.setPause(False)
+
 
 action = [0.0,0.0]
+action1 = [0.0,0.0]
 
 meantime = 0.0
-i=100
+i=10
 while i :
 	output = env.step(action)
+	output1 = env1.step(action1)
 	rospy.loginfo(output[1:])
 	if output[0] is not None :
 		for topic in output[0].keys() :
@@ -70,6 +73,24 @@ while i :
 				meantime+=elapsed
 				rospy.loginfo('elt:'+str(elapsed)+'::action : ')
 				rospy.loginfo(action)
+	
+	if output1[0] is not None :
+		for topic in output1[0].keys() :
+			if 'OMNIVIEW' in topic :
+				img = np.array(ros2np(output1[0][topic]))
+				#cv2.imshow('image',img)
+				#cv2.waitKey(1)
+				start = time.time()
+				try :
+					action1 = agent.inference(x=img)[0][0]
+				except Exception as e :
+					rospy.loginfo('error occurred..'+str(e))
+					action1 = [0.0,0.0]
+				elapsed = time.time()-start
+				meantime+=elapsed
+				rospy.loginfo('elt1:'+str(elapsed)+'::action1 : ')
+				rospy.loginfo(action1)
+	
 	i-=1
 	time.sleep(0.1)
 
