@@ -84,7 +84,13 @@ updateT = 1e-0
 updateTauTarget = 1e-3
 #updateTauTarget = 1e-1
 
+
+#nbrStepsPerReplay = 16
+#nbrStepsPerReplay = 32
 nbrStepsPerReplay = 64
+#nbrStepsPerReplay = 128
+
+
 gamma = 0.99 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
@@ -98,7 +104,9 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 1
+num_workers = 4
+threadExploration = False
+
 lr=1e-4
 #lr=1e-3
 
@@ -106,7 +114,7 @@ if useGAZEBO :
 	a_size = 2	
 	model_path = './DDPG-BA2C-r1s+60x160-sf3-batch16-tau1e-3-lr1e-4-w16'
 else :	
-	model_path = './DDPG-31-'+str(updateTauTarget)+'-w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
 
@@ -1162,7 +1170,7 @@ class Worker():
 					d = False
 
 					#Let us start a new episode :
-					if True : #self.number == 0 :
+					if threadExploration or self.number == 0 :
 						if not useGAZEBO :
 							if self.number == 0 :
 								print('ENVIRONMENT RESETTED !')

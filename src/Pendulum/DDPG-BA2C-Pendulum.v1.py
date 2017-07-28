@@ -78,7 +78,7 @@ h_size = 256
 
 a_size = 1
 
-model_path = './b128-w4-tau1e-3-lr1e-4-v1'
+model_path = './b128-w4-tau1e-3-lr1e-4-'
 
 eps_greedy_prob = 0.3
 if useGAZEBO :
