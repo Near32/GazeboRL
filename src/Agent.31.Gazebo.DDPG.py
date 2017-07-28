@@ -1,7 +1,7 @@
 # # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network
 
 ## TODO : implement the target network trick ?
-useGAZEBO = False
+useGAZEBO = True
 
 show = False
 load_model = False
@@ -112,7 +112,8 @@ lr=1e-4
 
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s+60x160-sf3-batch16-tau1e-3-lr1e-4-w16'
+	model_path = './DDPG-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+
 else :	
 	model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
