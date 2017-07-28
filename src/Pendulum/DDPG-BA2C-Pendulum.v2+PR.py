@@ -776,9 +776,9 @@ class AC_Network():
 			#
 			
 			#Gradients :
-			#qreshaped = tf.reshape(self.Qvalue,[-1])
-			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - self.Qvalue))
-			self.Qvalue_loss = tf.square(self.target_qvalue - self.Qvalue)
+			qreshaped = tf.reshape(self.Qvalue,(-1,1))
+			self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - self.Qvalue))
+			#self.Qvalue_loss = tf.square(self.target_qvalue - self.Qvalue)
 			#self.Qvalue_loss = tf.losses.mean_squared_error(labels=self.target_qvalue,predictions=self.Qvalue)
 			#self.Qvalue_loss = tf.squared_difference(self.target_qvalue,self.Qvalue)
 			# MINIMIZATION/MAXIMIZATION OF THE REWARD(PENALTY..) :
@@ -977,7 +977,7 @@ class Worker():
 				#TRAIN ACTOR :
 				feed_dict = {self.master_network.target_qvalue:self.target_qvalue_num,
 					self.master_network.inputs:vobs,
-					self.master_network.actions:a_out,
+					self.master_network.actions:actions,
 					self.master_network.keep_prob:self.master_network.dropoutK,
 					self.master_network.phase:True,
 					self.master_network.critic_gradients_action:critic_gradients_action[0]}
@@ -1030,7 +1030,7 @@ class Worker():
 				#TRAIN ACTOR :
 				feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
 					self.local_network.inputs:vobs,
-					self.local_network.actions:a_out,
+					self.local_network.actions:actions,
 					self.local_network.keep_prob:self.master_network.dropoutK,
 					self.local_network.phase:True,
 					self.local_network.critic_gradients_action:critic_gradients_action[0]}

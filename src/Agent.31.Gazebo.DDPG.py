@@ -1,4 +1,4 @@
-# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random
+# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network
 
 ## TODO : implement the target network trick ?
 useGAZEBO = False
@@ -54,15 +54,17 @@ if useGAZEBO :
 	env.setPause(False)
 	LoopRate = rospy.Rate(60)
 
-nbrskipframe = 3
+nbrskipframe = 1
 if useGAZEBO :
 	#img_size = (180,320,3)
 	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
+	nbrskipframe = 3
 	img_size = (60,80,nbrskipframe)
 else :
 	nbrskipframe = 1
 	img_size = (84,84,nbrskipframe)
+	#img_size = (3,1,nbrskipframe)#(84,84,nbrskipframe)
 						
 
 rec = False
@@ -71,39 +73,42 @@ rec = False
 a_bound = 2.0
 maxReplayBufferSize = 10000#2500
 max_episode_length = 400
-updateT = 1e0
+updateT = 1e-0
 
-updateTauTarget = 1e-6
+#updateTauTarget = 1e-6
 #updateTauTarget = 1e-5
 #updateTauTarget = 5e-5
 #updateTauTarget = 1e-4
+#updateTauTarget = 1e-4
+#updateTauTarget = 5e-4
+updateTauTarget = 1e-3
+#updateTauTarget = 1e-1
+
 nbrStepsPerReplay = 64
 gamma = 0.99 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
 
 if useGAZEBO == False :
-	s_size = 3*nbrskipframe
+	nbrskipframe = 1
+	s_size = nbrskipframe*3
 	
 h_size = 256
 
 a_size = 1
-#model_path = './DDPG-BA2C-batch128-tau1e-3-lr1e-4-w4'
-model_path = './DDPG-BA2C-batch8-tau1e-3-lr1e-4-w4'
-
 eps_greedy_prob = 0.3
+		
+num_workers = 1
+lr=1e-4
+#lr=1e-3
+
 if useGAZEBO :
 	a_size = 2	
 	model_path = './DDPG-BA2C-r1s+60x160-sf3-batch16-tau1e-3-lr1e-4-w16'
-	#model_path = './DDPG-BA2C-r1s+120x320-sf2-batch8-tau1e-3-lr1e-4-w1'
-	#model_path = './DDPG-BA2C-r1s+180x320-sf4-batch32-tau1e-3-lr1e-4-w4'
-	
-model_path = './testmulti1-'+str(updateTauTarget)
-#model_path = './testmultiCPU'
+else :	
+	model_path = './DDPG-31-'+str(updateTauTarget)+'-w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
-num_workers = 1
-lr=1e-4
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -624,9 +629,9 @@ class AC_Network():
 			shape_out = convnet.get_shape().as_list()
 			# ACTOR :
 			out1 = 256
-			#hidden1 = self.nn_layerBN(convnet, shape_out[1], out1, phase, 'actor_layer1', act=tf.nn.relu, std=1e-2)
-			#hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'actor_layer1', act=tf.nn.relu, std=1e-2)
-			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
+			#hidden1 = self.nn_layerBN(convnet, shape_out[1], out1, phase, 'actor_layer1', act=tf.nn.relu, std=1e-2, uniform=False)
+			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'actor_layer1', act=tf.nn.relu, std=1e-2)
+			dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			'''
 			out2 = 512
@@ -634,9 +639,10 @@ class AC_Network():
 			hidden2 = self.nn_layer(dropped1, out1, out2,'actor_layer2', act=tf.nn.relu)
 			dropped2 = tf.nn.dropout(hidden2, keep_prob)
 			'''
-			#yactor = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase,'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			#yactor = self.nn_layer(dropped1, out1, self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			#yactor = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase,'actor_layerOutput', act=tf.nn.relu, std=1e-2, uniform=False)
+			yactor = self.nn_layer(dropped1, out1, self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			#yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			#yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
 			
 			hidden = yactor
 			#Recurrent network for temporal dependencies
@@ -678,8 +684,8 @@ class AC_Network():
 				
 			shape_out = rnn_out.get_shape().as_list()
 
-			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=True)	
-			#scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=None)	
+			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
+			#scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-1, uniform=False)	
 			policy = tf.multiply(scaled_out, self.a_bound)	
 			
 			return policy
@@ -693,17 +699,19 @@ class AC_Network():
 			# CRITIC :
 			out1 = 512
 			#hidden1 = self.nn_layerBN(convnet, self.s_size, out1, phase, 'critic_layer1', act=tf.nn.relu)
-			#hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
-			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
+			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
+			dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
-			#out2 = 300
+			out2 = 256
 			#hidden2 = self.nn_layerBN(dropped1, out1, out2, phase, 'critic_layer2', act=tf.nn.relu)
-			#hidden2 = self.nn_layer(dropped1, out1, out2,'critic_layer2', act=tf.nn.relu)
-			#dropped2 = tf.nn.dropout(hidden2, keep_prob)
+			hidden2 = self.nn_layer(dropped1, out1, out2,'critic_layer2', act=tf.nn.relu)
+			dropped2 = tf.nn.dropout(hidden2, keep_prob)
 			
-			#ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
-			#ycritic = self.nn_layer(dropped1, out1, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
-			ycritic = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
+			ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
+			#ycritic = self.nn_layer(dropped1, out1, self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
+			#ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			#ycritic = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
+			#ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			
 			hidden = ycritic
 			#Recurrent network for temporal dependencies
@@ -745,19 +753,26 @@ class AC_Network():
 			actions = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='actions')
 			#
 			#vvalueadvantage = self.nn_layerBN(rnn_out, shape_out[1], self.nbrOutput, self.phase, 'vvalue-advantage')
-			actionadvantage = self.nn_layer( actions, self.a_size, self.nbrOutput, 'action-advantage', act=tf.nn.relu)
+			actionadvantage = self.nn_layer( actions, self.a_size, 2*self.nbrOutput, 'action-advantage', act=tf.nn.relu)
 			#vvalueadvantage = self.nn_layer( Vvalue, 1, self.nbrOutput, 'vvalue-advantage')
-			Vvalue = vvalueadvantage = rnn_out #self.nn_layer( rnn_out, shape_out[1], self.nbrOutput, 'vvalue-advantage', act=tf.nn.relu)
+			Vvalue = vvalueadvantage = self.nn_layer( rnn_out, shape_out[1], self.nbrOutput, 'vvalue-advantage', act=tf.nn.relu)
 			
 			#concat = tf.concat( [vvalueadvantage, actions], axis=1,name='concat-vvalue-actions-advantages')
-			concat = tf.nn.relu(vvalueadvantage+ actionadvantage)
+			#concat = tf.nn.relu(vvalueadvantage+ actionadvantage)
+			concat = tf.concat([ rnn_out, actionadvantage], axis=1, name='concat-actions-advantages')
+			concat_shape = concat.get_shape().as_list()
+			concat = self.nn_layer(concat, concat_shape[1], self.nbrOutput,'hidden-concat-actions-advantages', act=tf.nn.relu)
 			concat_shape = concat.get_shape().as_list()
 			
 			#hidden = self.nn_layerBN(concat, concat_shape[1], self.nbrOutput, self.phase, 'Q-value-hidden', act=tf.nn.relu)	
-			hidden = self.nn_layer(concat, concat_shape[1], self.nbrOutput/2, 'Q-value-hidden', act=tf.nn.relu)	
-			
+			#hidden = self.nn_layer(concat, concat_shape[1], self.nbrOutput/2, 'Q-value-hidden', act=tf.nn.relu)	
+			hiddenV = self.nn_layer(Vvalue, self.nbrOutput, 1, 'V-value-Advantage', act=tf.identity, std=3e-3,uniform=True)	
+			hiddenA = self.nn_layer(concat, concat_shape[1], 1, 'Action-Advantage', act=tf.identity, std=3e-3,uniform=True)	
+			sumhidden = hiddenV+hiddenA
 			#Qvalue = self.nn_layer( Vvalue+actionadvantage, self.nbrOutput, 1, 'Q-value', act=tf.identity)	
-			Qvalue = self.nn_layer( hidden, self.nbrOutput/2, 1, 'Q-value', act=tf.identity, std=1e-3,uniform=True)	
+			#Qvalue = self.nn_layer( hidden, self.nbrOutput/2, 1, 'Q-value', act=tf.identity, std=1e-3,uniform=True)	
+			Qvalue = sumhidden 
+			#Qvalue = self.nn_layer( sumhidden, 1, 1, 'Q-value', act=tf.identity, std=1e-3,uniform=True)	
 			#Qvalue = slim.fully_connected(actionadvantage+Vvalue,1,activation_fn=None,weights_initializer=normalized_columns_initializer(0.001),biases_initializer=None)
 		
 		
@@ -852,8 +867,9 @@ class AC_Network():
 			#
 			
 			#Gradients :
-			qreshaped = tf.reshape(self.Qvalue,[-1])
-			self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - qreshaped))
+			qreshaped = tf.reshape(self.Qvalue,(-1,1))
+			self.Qvalue_loss = tf.reduce_mean(tf.abs(self.target_qvalue - qreshaped))
+			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - qreshaped))
 			#self.Qvalue_loss = tf.losses.mean_squared_error(labels=self.target_qvalue,predictions=self.Qvalue)
 			#self.Qvalue_loss = tf.squared_difference(self.target_qvalue,self.Qvalue)
 			# MINIMIZATION/MAXIMIZATION OF THE REWARD(PENALTY..) :
@@ -931,33 +947,33 @@ class AC_Network():
 			
 			
 			
-	def predict_actor(self, sess, inputs) :
+	def predict_actor(self, sess, inputs, phase=False) :
 		feed_dict = {self.inputs:inputs,
 			self.keep_prob:1.0,
-			self.phase:False
+			self.phase:phase
 			}
 		return sess.run( [self.policy], feed_dict=feed_dict)[0]
 		
-	def predict_critic(self, sess, inputs, actions) :
+	def predict_critic(self, sess, inputs, actions, phase=False) :
 		feed_dict = {self.inputs:inputs,
 			self.actions:actions,
 			self.keep_prob:1.0,
-			self.phase:False
+			self.phase:phase
 			}
 		return sess.run( [self.Qvalue], feed_dict=feed_dict)[0]
 		
-	def predict_actor_target(self, sess, inputs) :
+	def predict_actor_target(self, sess, inputs, phase=False) :
 		feed_dict = {self.t_inputs:inputs,
 			self.t_keep_prob:1.0,
-			self.t_phase:False
+			self.t_phase:phase
 			}
 		return sess.run( [self.t_policy], feed_dict=feed_dict)[0]
 		
-	def predict_critic_target(self, sess, inputs, actions) :
+	def predict_critic_target(self, sess, inputs, actions, phase=False) :
 		feed_dict = {self.t_inputs:inputs,
 			self.t_actions:actions,
 			self.t_keep_prob:1.0,
-			self.t_phase:False
+			self.t_phase:phase
 			}
 		return sess.run( [self.t_Qvalue], feed_dict=feed_dict)[0]
 		
@@ -991,7 +1007,7 @@ class Worker():
 		self.useGAZEBO = useGAZEBO
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
-		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
+		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e0)}
 		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=useGAZEBO)
 		self.number = name        
 		self.model_path = model_path
@@ -1037,6 +1053,7 @@ class Worker():
 		
 		self.target_qvalue_num = []
 		for k in range(batch_size):
+			#self.target_qvalue_num.append(rewards[k,0] + gamma * bootstrap_value[k,0])
 			if terminate[k,0]:
 				self.target_qvalue_num.append(rewards[k,0])
 			else:
@@ -1055,17 +1072,6 @@ class Worker():
 				self.local_AC.keep_prob:self.local_AC.dropoutK,
 				self.local_AC.phase:True}
 		else :
-			a_out = self.local_network.predict_actor(sess, vobs)
-			feed_dict = {self.local_network.inputs:vobs,
-				self.local_network.actions:a_out,
-				self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:False}
-			critic_gradients_action, c_g_n = sess.run([self.local_network.critic_gradients_action_op, self.local_network.critic_grad_norms],
-				feed_dict = feed_dict)
-				#/batch_size
-				#TODO : decide about the importance of the division by batch_size....
-			
 			# TRAIN CRITIC :
 			feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
 				self.local_network.inputs:vobs,
@@ -1078,10 +1084,21 @@ class Worker():
 				self.local_network.apply_grads['critic']],
 				feed_dict=feed_dict)
 			
-			#TRAIN ACTOR :
-			feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.inputs:vobs,
+			#CREATE VALUES :
+			a_out = self.local_network.predict_actor(sess, vobs,phase=True)
+			feed_dict = {self.local_network.inputs:vobs,
 				self.local_network.actions:a_out,
+				self.local_network.target_qvalue:self.target_qvalue_num,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:False}
+			critic_gradients_action, c_g_n = sess.run([self.local_network.critic_gradients_action_op, self.local_network.critic_grad_norms],
+				feed_dict = feed_dict)
+				#/batch_size
+				#TODO : decide about the importance of the division by batch_size....
+			
+			#TRAIN ACTOR :
+			'''
+			feed_dict = {self.local_network.inputs:vobs,
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True,
 				self.local_network.critic_gradients_action:critic_gradients_action[0]}
@@ -1090,7 +1107,19 @@ class Worker():
 				self.local_network.actor_grad_norms,
 				self.local_network.apply_grads['actor']],
 				feed_dict=feed_dict)	
-				
+			'''
+			feed_dict = {self.local_network.actions:actions,
+				self.local_network.target_qvalue:self.target_qvalue_num,
+				self.local_network.inputs:vobs,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:True,
+				self.local_network.critic_gradients_action:critic_gradients_action[0]}
+		
+			p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
+				self.local_network.actor_grad_norms,
+				self.local_network.apply_grads['actor']],
+				feed_dict=feed_dict)
+					
 		# UPDATE OF THE TARGET NETWORK:
 		#if self.number == 0 :
 		sess.run(self.update_ops_target)
@@ -1114,8 +1143,6 @@ class Worker():
 		print ("Starting worker " + str(self.number))
 		make_gif_log = False
 		with sess.as_default(), sess.graph.as_default():                 
-			#Let us first synchronize this worker with the global network :
-			# or we synchronize the target with the global network entirely...
 			if self.number == 0:
 				sess.run(self.update_ops_target_init)
 				print('Target synchronized...')
@@ -1131,6 +1158,7 @@ class Worker():
 					episode_frames = []
 					episode_reward = 0
 					episode_step_count = 0
+					q_loss = 0
 					d = False
 
 					#Let us start a new episode :
@@ -1160,7 +1188,7 @@ class Worker():
 						actions = []   
 						a_noise = 0.0
 						time_log = 0
-						time_log_print = 50
+						time_log_print = 100
 						time_mean = 0.0
 						while d == False :
 							start = time()
@@ -1202,16 +1230,20 @@ class Worker():
 							'''
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
-							scale = self.local_network.a_bound/4.0
+							scale = self.local_network.a_bound/100.0#10.0
 							theta = 0.15
 							sigma = 0.3
 							a_noise += theta*(0.0-a_noise)+sigma*np.random.normal(loc=0.0,scale=scale)
+							a_backup = a[0]
 							a[0] += a_noise
 							
 							'''
 							a_noise =  (1. / (1. + episode_count))
 							a[0] += a_noise
 							'''
+							
+							#if self.number == 0 :
+							#	print('state : {} ; policy : {} ; noise : {}'.format(s, a_backup,a_noise) )
 
 							if useGAZEBO :
 								s1, r, d, _ = envstep(self.env, a[0])
@@ -1220,14 +1252,11 @@ class Worker():
 								if self.number == 0:
 									self.env.render()
 
-							if d == False:
-								episode_frames.append(s1)
-								if useGAZEBO :
-									s1 = preprocess(s1, img_size[0], img_size[1] )
-								else :
-									s1 = np.reshape(s1,(-1,self.master_network.s_size))
-							else:
-								s1 = s
+							episode_frames.append(s1)
+							if useGAZEBO :
+								s1 = preprocess(s1, img_size[0], img_size[1] )
+							else :
+								s1 = np.reshape(s1,(-1,self.master_network.s_size))
 								
 							r /= reward_scaler
 							
@@ -1254,6 +1283,7 @@ class Worker():
 							if remainingSteps < 0 :
 								d = True
 							
+							'''
 							if logit > 100 :
 								#NETWORK-RELATED SUMMARIES :
 								if self.number == 0:
@@ -1286,9 +1316,11 @@ class Worker():
 								logit = 0
 							else :
 								logit += 1
+							'''
 							
 							if len(self.rBuffer) > self.nbrStepPerReplay:
-								self.train_on_rBuffer(sess)
+								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
+								q_loss += np.mean(v_l)
 							
 							if self.useGAZEBO :
 								LoopRate.sleep()
@@ -1300,7 +1332,7 @@ class Worker():
 									time_log = 0
 									time_mean += end-start
 									time_mean /= time_log_print
-									print('EXECUTION TIME : {}'.format(time_mean) )
+									print('EXECUTION TIME : %.4f' % time_mean )
 									time_mean = 0.0
 								else :
 									time_mean += end - start
@@ -1348,6 +1380,8 @@ class Worker():
 							sess.run(self.increment)
 						
 						# TRAIN ON THIS EPISODE :
+						# THIS IS CORRELATED... might not be good to train on it... we need to keep it off-policy since the action are randomly choosen...
+						'''
 						a1 = None
 						idxSteps = range(episode_step_count)
 						
@@ -1380,6 +1414,7 @@ class Worker():
 						
 						
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train( rollout,sess,gamma,q1)
+						'''
 
 					#END OF IF SELF.NUMBER == 0
 					
@@ -1405,6 +1440,7 @@ class Worker():
 							summary.value.add(tag='Losses/Actor_Grad Norm', simple_value=float(a_g_n))
 							summary.value.add(tag='Losses/Critic_Grad Norm', simple_value=float(c_g_n))
 							summary.value.add(tag='Losses/Var Norm', simple_value=float(v_n))
+							summary.value.add(tag='Losses/Q Loss', simple_value=float(q_loss)/(episode_step_count+1))
 							self.summary_writer.add_summary(summary, episode_count)
 							self.summary_writer.flush()
 						
@@ -1441,12 +1477,12 @@ class Worker():
 			self.local_AC.keep_prob:1.0,
 			self.local_AC.phase:False})[0,0]
 		else :
-			if self.number != 0 :
-				a1 = self.local_network.predict_actor_target( sess, s1)
-				q1 = self.local_network.predict_critic_target( sess, s1, a1)
-			else :
-				a1 = self.master_network.predict_actor_target( sess, s1)
-				q1 = self.master_network.predict_critic_target( sess, s1, a1)
+			#if self.number != 0 :
+			a1 = self.local_network.predict_actor_target( sess, s1, phase=True)
+			q1 = self.local_network.predict_critic_target( sess, s1, a1, phase=True)
+			#else :
+			#	a1 = self.master_network.predict_actor_target( sess, s1, phase=True)
+			#	q1 = self.master_network.predict_critic_target( sess, s1, a1, phase=True)
 		
 		return self.train( rollout,sess,gamma,q1)
 		
@@ -1477,6 +1513,7 @@ with tf.device("/cpu:0"):
 			game = env
 		else :
 			game = gym.make('Pendulum-v0')
+			#game = gym.make('MountainCarContinuous-v0')
 		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO))
 	saver = tf.train.Saver(max_to_keep=5)
 
