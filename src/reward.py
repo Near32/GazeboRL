@@ -56,13 +56,13 @@ while continuer :
 		radius = np.sqrt( cp.x**2+cp.y**2 )
 		rp = (radius-args.radius)**2
 		#rt = ( ct.linear.x - args.velocity )**2
-		rt = (( ct.linear.x - args.velocity )**2)/1.0
-		penality = ( ct.angular.z )**2 + (( ct.linear.x )**2)/100.0
+		rt = (( ct.linear.x - args.velocity )**2)/10.0
+		penality = ( ct.angular.z )**2 + (( ct.linear.x )**2)/20.0
 		#high favours positional constraint...
 		lambdap = 0.99
 		#lp = 2.0
 		#tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt+lp*penality )
-		tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt )
+		tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt +penality)
 		
 	if tr is not None :
 		pubR.publish(tr)
