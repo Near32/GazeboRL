@@ -1,0 +1,42 @@
+<launch>
+  <arg name="world_file"  default="$(find OPUSim)/launch/worlds/empty.world"/>
+	<arg name="gui" default="false"/>
+	<arg name="launchController" default="false"/>
+  
+
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="paused" value="true"/>
+    <arg name="use_sim_time" value="false"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="headless" value="false"/>
+    <arg name="debug" value="false"/>
+    <arg name="world_name" value="$(arg world_file)"/>
+  </include>
+  
+  <!-- Spawn a robot into Gazebo -->
+	<node name="spawn_target" pkg="gazebo_ros" type="spawn_model" args="-file $(find OPUSim)/models/target_model/model.sdf -sdf -z 0 -x 0 -y 0 -model target_model" />
+	
+	
+  <!-- Spawn a robot into Gazebo -->
+	<node name="spawn_model0" pkg="gazebo_ros" type="spawn_model" args="-file $(find OPUSim)/models/robot_model_teleop_0/model.sdf -sdf -z 0 -x 1 -y 1 -model robot_0" />
+	
+	<include file="$(find OPUSim)/launch/robot.launch">
+		<arg name="robot_number" 				value="0"/>
+		<arg name="R" 									value="2.0"/>
+		<arg name="emergencyBreak" 			value="0"/>
+		<arg name="Omega" 							value="2.0"/>
+		<arg name="tresholdDistAccount" value="0.6"/>
+		<arg name="a" 									value="1.5"/>
+		<arg name="kv" 									value="0.1"/>
+		<arg name="kw" 									value="0.2"/>
+		<arg name="kR" 									value="10.0"/>
+		<arg name="epsilon" 						value="1.0"/>
+		<arg name="debugRSO" 						value="0"/>
+		<arg name="Iang" 								value="0.4"/>
+		<arg name="launchController" 		value="$(arg launchController)"/>
+	</include>
+	
+	<node name="reward" pkg="GazeboRL" type="reward.py" args="-r 2.0 -v 0.5"/>
+	
+</launch>
