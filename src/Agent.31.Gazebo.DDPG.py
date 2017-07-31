@@ -1,7 +1,7 @@
 # # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network
 
 ## TODO : implement the target network trick ?
-useGAZEBO = True
+useGAZEBO = False
 
 show = False
 load_model = False
@@ -59,7 +59,7 @@ if useGAZEBO :
 	#img_size = (180,320,3)
 	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
-	nbrskipframe = 3
+	nbrskipframe = 1
 	img_size = (60,80,nbrskipframe)
 else :
 	nbrskipframe = 1
@@ -86,8 +86,10 @@ updateTauTarget = 1e-3
 
 
 #nbrStepsPerReplay = 16
-#nbrStepsPerReplay = 32
-nbrStepsPerReplay = 64
+if useGAZEBO :
+	nbrStepsPerReplay = 32
+else :
+	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
 
 
@@ -459,7 +461,10 @@ class AC_Network():
 		
 			#Input and visual encoding layers
 			#PLACEHOLDER :
-			self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
+			if self.useGAZEBO :
+				self.inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
+			else :
+				self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
 			self.imageIn = tf.reshape(self.inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
 			
@@ -543,7 +548,11 @@ class AC_Network():
 			
 			#Input and visual encoding layers
 			#PLACEHOLDER :
-			inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
+			#PLACEHOLDER :
+			if self.useGAZEBO :
+				inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
+			else :
+				inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
 			
 		policy = self.build_actor(inputs, keep_prob, phase, scope+'/actor')

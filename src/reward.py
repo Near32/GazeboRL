@@ -55,7 +55,8 @@ while continuer :
 		#let us compute the rewards to publish :
 		radius = np.sqrt( cp.x**2+cp.y**2 )
 		rp = (radius-args.radius)**2
-		rt = ( ct.linear.x - args.velocity )**2
+		#rt = ( ct.linear.x - args.velocity )**2
+		rt = (( ct.linear.x - args.velocity )**2)/1.0
 		penality = ( ct.angular.z )**2 + (( ct.linear.x )**2)/100.0
 		#high favours positional constraint...
 		lambdap = 0.99
