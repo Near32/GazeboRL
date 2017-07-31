@@ -23,14 +23,13 @@ def initAgent():
 	return model
 
 
-port = 11315
-env = Swarm1GazeboRL(port=port)
-port += 1
+port1 = 11315
+env = Swarm1GazeboRL(port=port1)
+port2 = port1 + 1
 env.make()
 
 
-env1 = Swarm1GazeboRL(port=port)
-port += 1
+env1 = Swarm1GazeboRL(port=port2)
 env1.make()
 
 
@@ -52,7 +51,7 @@ action = [0.0,0.0]
 action1 = [0.0,0.0]
 
 meantime = 0.0
-i=10
+i=10000
 while i :
 	output = env.step(action)
 	output1 = env1.step(action1)
@@ -100,4 +99,5 @@ rospy.loginfo('MEAN COMPUTATION TIME :'+str(meantime/1000.0))
 #cv2.destroyAllWindows()
 
 env.close()
+env1.close()
 

@@ -221,6 +221,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.envdict["GAZEBO_MASTER_URI"]='http://localhost:'+str(self.port+40)
 		
 		init_roscore(self.envdict,self.port)
+		time.sleep(1)
 		
 		commands = {'launch': None}
 		launchCom = []
