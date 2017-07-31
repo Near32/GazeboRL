@@ -4,14 +4,13 @@ import numpy as np
 import rospy
 import time
 
-from nav_msgs.msg import Odometry
+from gazebo_msgs.msg import ModelStates
 from geometry_msgs.msg import Pose, Twist
 from std_msgs.msg import Float64
 import argparse
 
 parser = argparse.ArgumentParser(description="Energy-based Reward node for RL framework.")
 parser.add_argument('-r', help='radius distance from the target.', dest='radius', type=float, default=2.0)
-parser.add_argument('-v', help='rotational velocity around the target.', dest='velocity', type=float, default=1.0)
 parser.add_argument('-Omega', help='natural frequency of the oscillators.', dest='Omega', type=float,	default=2.0)
 parser.add_argument('-tDA', help='threshold distance to account for obstacles.', dest='thresholdDistAccount', type=float, default=0.6)
 parser.add_argument('-a', help='proportional gain to the radius controller.', dest='a', type=float, default=1.5)
@@ -25,9 +24,9 @@ args, unknown = parser.parse_known_args()
 print(args)
 print(unknown)
 
-buffodom = list()
-def callbackODOMETRY(odom) :
-	buffodom.append(odom)
+buffstate = list()
+def callbackState(state) :
+	buffstate.append(state)
 	
 
 
@@ -35,42 +34,68 @@ continuer = True
 def shutdown() :
 	continuer = False
 
-rospy.init_node('reward_node', anonymous=False)
+rospy.init_node('EnergyBasedReward_node', anonymous=False)
 rospy.on_shutdown(shutdown)
 
-subODOM = rospy.Subscriber( '/robot_model_teleop_0/odom_diffdrive', Odometry, callbackODOMETRY )
+subState = rospy.Subscriber( '/gazebo/model_states', ModelStates, callbackState )
 pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
 
 
 rate = rospy.Rate(100)
 
-todom = None
+tstate = None
 tr = Float64()
 tr.data = 0.0
 maxvalue = 10.0
 
 while continuer :
 	
-	if len(buffodom) :
-		todom = buffodom[-1]
-		del buffodom[:]
+	if len(buffstate) :
+		tstate = buffstate[-1]
+		del buffstate[:]
 		
 		#gather information :
-		cp = todom.pose.pose.position
-		ct = todom.twist.twist
+		nbrRobot = 0
+		#cp = todom.pose.pose.position
+		#ct = todom.twist.twist
+		#rospy.loginfo(tstate)
+		robots = list()
+		target = None
+		obstacles = list()
 		
-		#let us compute the rewards to publish :
-		radius = np.sqrt( cp.x**2+cp.y**2 )
-		rp = (radius-args.radius)**2
-		#rt = ( ct.linear.x - args.velocity )**2
-		rt = (( ct.linear.x - args.velocity )**2)/10.0
-		penality = ( ct.angular.z )**2 + (( ct.linear.x )**2)/20.0
-		#high favours positional constraint...
-		lambdap = 0.99
-		#lp = 2.0
-		#tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt+lp*penality )
-		tr.data = -1.0 * ( lambdap*rp+(1-lambdap)*rt +penality)
-		
+		for (name,pose,twist) in zip(tstate.name,tstate.pose,tstate.twist) :
+			if 'robot' in name :
+				#then we can count one more robot :
+				nbrRobot +=1
+				#save its pose and twist :
+				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
+				q = np.array([ pose.orientation.x , pose.orientation.y, pose.orientation.z, pose.orientation.w ])
+				tl = np.array([ twist.linear.x , twist.linear.y, twist.linear.z ])
+				ta = np.array([ twist.angular.x , twist.angular.y, twist.angular.z ])
+				
+				robots.append( (p , q, tl, ta) )
+			
+			if 'target' in name :
+				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
+				q = np.array([ pose.orientation.x , pose.orientation.y, pose.orientation.z, pose.orientation.w ])
+				tl = np.array([ twist.linear.x , twist.linear.y, twist.linear.z ])
+				ta = np.array([ twist.angular.x , twist.angular.y, twist.angular.z ])
+				
+				target = (p, q, tl, ta)
+				
+			if 'obstacle' in name :
+				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
+				q = np.array([ pose.orientation.x , pose.orientation.y, pose.orientation.z, pose.orientation.w ])
+				tl = np.array([ twist.linear.x , twist.linear.y, twist.linear.z ])
+				ta = np.array([ twist.angular.x , twist.angular.y, twist.angular.z ])
+				
+				obstacles.append( (p, q, tl, ta) )
+			
+		if target is not None :	
+			#let us compute the rewards to publish :
+			#rospy.loginfo(robots)
+			tr.data = -1.0 #* ( lambdap*rp+(1-lambdap)*rt +penality)
+			
 	if tr is not None :
 		pubR.publish(tr)
 	

@@ -212,8 +212,9 @@ class GazeboRL :
 
 
 class Swarm1GazeboRL(GazeboRL) :
-	def __init__(self,port=11311):
+	def __init__(self,port=11311,energy_based=False):
 		self.continuousActions = False
+		self.energy_based = energy_based
 		
 		self.port = port
 		self.envdict = os.environ
@@ -225,10 +226,12 @@ class Swarm1GazeboRL(GazeboRL) :
 		
 		commands = {'launch': None}
 		launchCom = []
-		#launchCom.append('roslaunch OPUSim robot1swarm.launch')
-		launchCom.append('roslaunch -p '+str(self.port)+' OPUSim robot1swarm.launch')
-		#launchCom.append('python /rosbuild_ws/sandbox/GazeboRL/src/reward.py -r 2.0 -v 1.0')
-		#launchCom.append('roslaunch OPUSim robot2swarm.launch')
+		
+		if energy_based == False :
+			launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.launch')
+		else :
+			launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+		
 		commands['launch'] = launchCom
 		
 		# SUBSCRIBERS :
