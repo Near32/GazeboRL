@@ -403,8 +403,8 @@ class Swarm1GazeboRL(GazeboRL) :
 		sizemin = -2.5
 		sizemax = 2.5
 		sizeobs = 0.75
-		#posobs = [ [2.2, 0.0], [-2.8, 0.0], [0.0, 0.0] ]
-		posobs = [ [0.0, 0.0] ]
+		posobs = [ [2.0, 0.0], [-2.0, 0.0], [0.0, 0.0] ]
+		#posobs = [ [0.0, 0.0] ]
 		
 		while notokay	:
 			notokay = False
