@@ -41,8 +41,9 @@ rospy.on_shutdown(shutdown)
 subState = rospy.Subscriber( '/gazebo/model_states', ModelStates, callbackState )
 pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
 
-
-rate = rospy.Rate(100)
+freq = 100
+dt = 1.0/freq
+rate = rospy.Rate(freq)
 
 tstate = None
 tr = Float64()
@@ -67,7 +68,8 @@ def h1(kr, rdd, rd) :
 
 def h2(kr, rt, robs, thetaobs) :
 	tobs_f = thetaobs
-	denum = np.log( 1.0+kr*np.abs(rt-robs)+1e-3)
+	#denum = np.log( 1.0+kr*np.abs(rt-robs)+1e-3)
+	denum = np.log( 1.0+kr*np.maximum( 0.0,robs-rt )+1e-3)
 	
 	if tobs_f >= 0.0 :
 		return 1.0/denum
@@ -79,19 +81,20 @@ def rddot( kr, rdd, rd, rt, robs, thetaobs) :
 	if np.abs(thetaobs) > np.pi/2.0 :
 		tobs_f = np.pi/2.0
 		
-	 ltheta = np.cos(tobs_f)
-	 
-	 h_1 = h1(kr, rdd, rd)
-	 h_2 = h2(kr, rt, robs, tobs_f)
-	 
-	 return (1.0-ltheta)*h_1-ltheta*h_2
-	 
+	ltheta = np.cos(tobs_f)
+
+	h_1 = h1(kr, rdd, rd)
+	h_2 = h2(kr, rt, robs, tobs_f)
+
+	return (1.0-ltheta)*h_1-ltheta*h_2
+
 
 def controlLaw(kv,kw,a,r,rd,theta,om,eps,psi) :
-	return np.reshape( np.array( [ v(kv,a,r,rd,theta,om,eps,psi), w(kv,a,r,rd,theta,om,eps,psi) ]), newshape=(2,1) )
+	return np.reshape( [ v(kv,a,r,rd,theta,om,eps,psi), w(kv,a,r,rd,theta,om,eps,psi) ], newshape=(2,1) )
 	
 	
-	
+rd = dict()
+			
 while continuer :
 	
 	if len(buffstate) :
@@ -106,14 +109,13 @@ while continuer :
 		robots = list()
 		target = None
 		obstacles = list()
-		rd = dict()
 		
 		for (name,pose,twist) in zip(tstate.name,tstate.pose,tstate.twist) :
 			if 'robot' in name :
 				#then we can count one more robot :
 				nbrRobot +=1
 				#let us initialize rd if necessary :
-				if rd[name] is None :
+				if not (name in rd) :
 					rd[name] = args.radius
 				#save its pose and twist :
 				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
@@ -175,27 +177,55 @@ while continuer :
 					#compute distance and angular offset to obstacles :
 					dists = list()
 					for obs in obstacles :
-						dist = np.sqrt( (robots[i]['position'][0]-obs[0][0])**2 + (robots[i]['position'][1]-obs[0][1])**2)
-						#TODO : angular = np.sqrt( (robots[i]['position'][0]-obs[0][0])**2 + (robots[i]['position'][1]-obs[0][1])**2)
-						dists.append( (obs[4], dist) )
-					mindistobs = 
-					#compute rdd :
-					robos[i]['rdd'] = rdd( args.kR, args.radius, rd[robots[i]['name']], args.thresholdDistRadius, robots[i]['robs'], robots[i]['thetaobs'] )
-				
+						dx = robots[i]['position'][0]-obs[0][0]
+						dy = robots[i]['position'][1]-obs[0][1]
+						dist = np.sqrt( (dx)**2 + (dy)**2)
+						angular = np.arctan2(dy,dx) - robots[i]['theta']
+						dists.append( (obs[4], dist, angular) )
+					mindistobs = sorted(dists, key=lambda el : el[1] )[0]
+					#refactoring the thetaobs var between -pi and +pi :
+					while mindistobs[2] >= np.pi :
+						mindistobs[2] -= 2*np.pi
+					while mindistobs[2] <= -np.pi :
+						mindistobs[2] += 2*np.pi
+					rospy.loginfo('robot {} : mindist obs : robs={} :: thetaobs={}'.format(i,mindistobs[1], mindistobs[2]*180.0/np.pi) )
+					robots[i]['robs'] = mindistobs[1]
+					robots[i]['thetaobs'] = mindistobs[2]
+					
+					# compute rddot :
+					robots[i]['rdd'] = rddot( args.kR, args.radius, rd[robots[i]['name']], args.thresholdDistAccount, robots[i]['robs'], robots[i]['thetaobs'] )
+					
+					# update rdd :
+					#rospy.loginfo('robot {} :  rd={} :: rddot={}'.format(i, rd[robots[i]['name']], robots[i]['rdd']) )
+					rd[robots[i]['name']] +=  dt*robots[i]['rdd']
+					
+					if rd[robots[i]['name']] >= 8.0 :
+						rd[robots[i]['name']] = 8.0
+					if rd[robots[i]['name']] <= 1.0 :
+						rd[robots[i]['name']] = 1.0
+					rospy.loginfo('robot {} :  rd={} :: rddot={}'.format(i, rd[robots[i]['name']], robots[i]['rdd']) )
+						
+					
 				for i in range(nbrRobot) :
 					cIdx = (i+1)%nbrRobot
-					psi_dot = robots[cIdx]['controlLaw'][0]*np.sin( robots[cIdx]['theta'] )/(robots[cIdx]['r']+1e-4) - robots[i]['controlLaw'][0]*np.sin( robots[i]['theta'] )/(robots[i]['r']+1e-4) 
-					robots[i]['state_dot'] =  np.reshape( np.array( [ robots[i]['controlLaw'][0]*np.cos( robots[i]['theta']) , robots[i]['controlLaw'][1] , psi_dot ] ), newshape=(3,1) )
-					robots[i]['kinetic_energy'] = 0.5*args.mass* (  robots[i]['state_dot'][0]**2 + robots[i]['state_dot'][1]**2 + robots[i]['state_dot'][2]**2  )
+					psi_dot = robots[cIdx]['controlLaw'][0,0]*np.sin( robots[cIdx]['theta'] )/(robots[cIdx]['r']+1e-4) - robots[i]['controlLaw'][1,0]*np.sin( robots[i]['theta'] )/(robots[i]['r']+1e-4)
+					#robots[i]['state_dot'] =  np.reshape( np.array( [ robots[i]['controlLaw'][0,0]*np.cos( robots[i]['theta']) , robots[i]['controlLaw'][1,0] , psi_dot ] ), newshape=(3,1) )
+					robots[i]['state_dot'] =  np.reshape( [ robots[i]['controlLaw'][0,0]*np.cos( robots[i]['theta']) , robots[i]['controlLaw'][1,0] , psi_dot, robots[i]['rdd'] ], newshape=(4,1) )
+					#robots[i]['kinetic_energy'] = 0.5*args.mass* (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 )
+					robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 + robots[i]['state_dot'][3,0]**2  )
+					
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
 					#rospy.loginfo('robot: {} :: phi={} :: psi={} :: theta={}'.format(robots[i]['name'],robots[i]['phi']*180.0/np.pi,robots[i]['psi']*180.0/np.pi, robots[i]['theta']*180.0/np.pi ) )
 					#rospy.loginfo('robot: {} :: v={} :: w={}'.format(robots[i]['name'],robots[i]['controlLaw'][0],robots[i]['controlLaw'][1] ) )
 					#rospy.loginfo('robot: {} :: {} {} {}'.format(robots[i]['name'],robots[i]['state_dot'][0],robots[i]['state_dot'][1], robots[i]['state_dot'][2] ) )
+					#rospy.loginfo(robots[i]['state_dot'])
 					rospy.loginfo('robot: {} :: kinetic energy = {}'.format(robots[i]['name'],robots[i]['kinetic_energy'] ) )
 				
 				#let us compute the rewards to publish :	
 				tr.data = -1.0 * swarm_kinetic_energy
+				#rospy.loginfo('swarm kinetic energy = {}'.format(swarm_kinetic_energy ) )
+				
 			
 			else :
 				tr.data = 0.0
