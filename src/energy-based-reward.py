@@ -188,7 +188,7 @@ while continuer :
 						mindistobs[2] -= 2*np.pi
 					while mindistobs[2] <= -np.pi :
 						mindistobs[2] += 2*np.pi
-					rospy.loginfo('robot {} : mindist obs : robs={} :: thetaobs={}'.format(i,mindistobs[1], mindistobs[2]*180.0/np.pi) )
+					#rospy.loginfo('robot {} : mindist obs : robs={} :: thetaobs={}'.format(i,mindistobs[1], mindistobs[2]*180.0/np.pi) )
 					robots[i]['robs'] = mindistobs[1]
 					robots[i]['thetaobs'] = mindistobs[2]
 					
@@ -203,7 +203,7 @@ while continuer :
 						rd[robots[i]['name']] = 8.0
 					if rd[robots[i]['name']] <= 1.0 :
 						rd[robots[i]['name']] = 1.0
-					rospy.loginfo('robot {} :  rd={} :: rddot={}'.format(i, rd[robots[i]['name']], robots[i]['rdd']) )
+					#rospy.loginfo('robot {} :  rd={} :: rddot={}'.format(i, rd[robots[i]['name']], robots[i]['rdd']) )
 						
 					
 				for i in range(nbrRobot) :
@@ -220,7 +220,7 @@ while continuer :
 					#rospy.loginfo('robot: {} :: v={} :: w={}'.format(robots[i]['name'],robots[i]['controlLaw'][0],robots[i]['controlLaw'][1] ) )
 					#rospy.loginfo('robot: {} :: {} {} {}'.format(robots[i]['name'],robots[i]['state_dot'][0],robots[i]['state_dot'][1], robots[i]['state_dot'][2] ) )
 					#rospy.loginfo(robots[i]['state_dot'])
-					rospy.loginfo('robot: {} :: kinetic energy = {}'.format(robots[i]['name'],robots[i]['kinetic_energy'] ) )
+					#rospy.loginfo('robot: {} :: kinetic energy = {}'.format(robots[i]['name'],robots[i]['kinetic_energy'] ) )
 				
 				#let us compute the rewards to publish :	
 				tr.data = -1.0 * swarm_kinetic_energy
