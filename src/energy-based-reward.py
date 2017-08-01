@@ -94,6 +94,7 @@ def controlLaw(kv,kw,a,r,rd,theta,om,eps,psi) :
 	
 	
 rd = dict()
+rewards = dict()
 			
 while continuer :
 	
@@ -182,8 +183,9 @@ while continuer :
 						dist = np.sqrt( (dx)**2 + (dy)**2)
 						angular = np.arctan2(dy,dx) - robots[i]['theta']
 						dists.append( (obs[4], dist, angular) )
-					mindistobs = sorted(dists, key=lambda el : el[1] )[0]
+					mindistobs = list( sorted(dists, key=lambda el : el[1] )[0] )
 					#refactoring the thetaobs var between -pi and +pi :
+					#rospy.loginfo(mindistobs)
 					while mindistobs[2] >= np.pi :
 						mindistobs[2] -= 2*np.pi
 					while mindistobs[2] <= -np.pi :
@@ -216,6 +218,8 @@ while continuer :
 					
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
+					rewards[robots[i]['name']] = robots[i]['kinetic_energy']
+					
 					#rospy.loginfo('robot: {} :: phi={} :: psi={} :: theta={}'.format(robots[i]['name'],robots[i]['phi']*180.0/np.pi,robots[i]['psi']*180.0/np.pi, robots[i]['theta']*180.0/np.pi ) )
 					#rospy.loginfo('robot: {} :: v={} :: w={}'.format(robots[i]['name'],robots[i]['controlLaw'][0],robots[i]['controlLaw'][1] ) )
 					#rospy.loginfo('robot: {} :: {} {} {}'.format(robots[i]['name'],robots[i]['state_dot'][0],robots[i]['state_dot'][1], robots[i]['state_dot'][2] ) )

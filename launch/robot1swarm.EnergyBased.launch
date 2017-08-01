@@ -58,6 +58,7 @@
 		<arg name="launchController" 		value="$(arg launchController)"/>
 	</include>
 	
-	<node name="EnergyBasedReward" pkg="GazeboRL" type="energy-based-reward.py" args="-r 2.0"/>
+	
+	<node name="EnergyBasedReward" pkg="GazeboRL" type="energy-based-reward.py" args="-r 2.0" respawn="true"/>
 	
 </launch>
