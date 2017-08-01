@@ -5,6 +5,8 @@ useGAZEBO = True
 
 show = False
 load_model = False
+energy_based = True
+base_port = 11315
 
 import threading
 import multiprocessing
@@ -46,13 +48,15 @@ if useGAZEBO :
 
 
 if useGAZEBO :
-	env = Swarm1GazeboRL()
-	env.make()
+	env= list()
+	env.append( Swarm1GazeboRL(base_port,energy_based) )
+	base_port += 1
+	env[0].make()
 	print('\n\nwait for 5 sec...\n\n')
 	time.sleep(5)
-	env.reset()
-	env.setPause(False)
-	LoopRate = rospy.Rate(60)
+	env[0].reset()
+	env[0].setPause(False)
+	#LoopRate = rospy.Rate(60)
 
 nbrskipframe = 1
 if useGAZEBO :
@@ -107,7 +111,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 3
 threadExploration = False
 
 lr=1e-4
@@ -116,7 +120,8 @@ lr=1e-4
 if useGAZEBO :
 	a_size = 2	
 	model_path = './DDPG-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
-
+	if threadExploration :
+		model_path = model_path+'+TheadExploration'
 else :	
 	model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
@@ -1154,6 +1159,7 @@ class Worker():
 		
 		    
 	def work(self,max_episode_length,gamma,sess,coord,saver):
+		LoopRate = rospy.Rate(60)
 		episode_count = sess.run(self.global_episodes)
 		summary_count = 0
 		total_steps = 0
@@ -1531,7 +1537,17 @@ with tf.device("/cpu:0"):
 	for i in range(num_workers):
 		game = None
 		if useGAZEBO :
-			game = env
+			if threadExploration == False :
+				game = env[0]
+			else :	
+				game = Swarm1GazeboRL(base_port,energy_based)
+				base_port += 1
+				game.make()
+				print('\n\nCreation of the environment :: wait for 2 sec...\n\n')
+				time.sleep(2)
+				game.reset()
+				game.setPause(False)
+				env.append( game )
 		else :
 			game = gym.make('Pendulum-v0')
 			#game = gym.make('MountainCarContinuous-v0')
@@ -1561,5 +1577,7 @@ with tf.Session() as sess:
 	coord.join(worker_threads)
 
   
-env.close()
+for envi in env :
+	envi.close()
+
 

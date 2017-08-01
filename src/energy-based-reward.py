@@ -32,11 +32,11 @@ def callbackState(state) :
 
 
 continuer = True
-def shutdown() :
+def shuttingdown() :
 	continuer = False
 
 rospy.init_node('EnergyBasedReward_node', anonymous=False)
-rospy.on_shutdown(shutdown)
+rospy.on_shutdown(shuttingdown)
 
 subState = rospy.Subscriber( '/gazebo/model_states', ModelStates, callbackState )
 pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
@@ -236,5 +236,6 @@ while continuer :
 	
 	if continuer :	
 		rate.sleep()
+	
 
 
