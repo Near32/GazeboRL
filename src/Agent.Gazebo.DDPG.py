@@ -7,6 +7,7 @@ show = False
 load_model = False
 energy_based = True
 base_port = 11315
+reward_bound = 1e1
 
 import threading
 import multiprocessing
@@ -1284,6 +1285,11 @@ class Worker():
 								s1 = preprocess(s1, img_size[0], img_size[1] )
 							else :
 								s1 = np.reshape(s1,(-1,self.master_network.s_size))
+							
+							
+							#bounding the rewards :
+							if np.abs(r) > reward_bound :
+								r = reward_bound*np.sign(r)
 								
 							r /= reward_scaler
 							
