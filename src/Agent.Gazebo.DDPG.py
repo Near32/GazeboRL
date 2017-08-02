@@ -65,7 +65,7 @@ if useGAZEBO :
 	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
 	nbrskipframe = 1
-	img_size = (60,80,nbrskipframe)
+	img_size = (120,160,nbrskipframe)
 else :
 	nbrskipframe = 1
 	img_size = (84,84,nbrskipframe)
@@ -581,7 +581,7 @@ class AC_Network():
 				output_dim1 = [ nbr_filter1]
 				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
 				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
-				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=8, stride=4,padding='SAME')
+				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=10, stride=6,padding='SAME')
 				rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
 		
 				#LAYER STN 1 :
@@ -599,7 +599,7 @@ class AC_Network():
 				output_dim2 = [ nbr_filter2]
 				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
 				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-				relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=2, padding='SAME')
+				relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=3, padding='SAME')
 				rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
 		
 				#LAYER STN 2 :
