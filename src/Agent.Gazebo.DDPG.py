@@ -65,7 +65,8 @@ if useGAZEBO :
 	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
 	nbrskipframe = 1
-	img_size = (120,160,nbrskipframe)
+	#img_size = (120,160,nbrskipframe)
+	img_size = (120,120,nbrskipframe)
 else :
 	nbrskipframe = 1
 	img_size = (84,84,nbrskipframe)
@@ -93,7 +94,7 @@ updateTauTarget = 1e-3
 #nbrStepsPerReplay = 16
 #nbrStepsPerReplay = 32
 if useGAZEBO :
-	nbrStepsPerReplay = 8#32
+	nbrStepsPerReplay = 4#32
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -112,10 +113,11 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 1
+num_workers = 4
 threadExploration = False
 
-lr=3e-4
+#lr=3e-4
+lr=5e-4
 #lr=1e-3
 
 if useGAZEBO :
@@ -728,16 +730,16 @@ class AC_Network():
 			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			out2 = 256
-			hidden2 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
+			#hidden2 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
 			#hidden2 = self.nn_layerBN(dropped1, out1, out2, phase, 'critic_layer2', act=tf.nn.relu)
 			#hidden2 = self.nn_layer(dropped1, out1, out2,'critic_layer2', act=tf.nn.relu)
-			dropped2 = tf.nn.dropout(hidden2, keep_prob)
+			#dropped2 = tf.nn.dropout(hidden2, keep_prob)
 			
-			ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
+			#ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
 			#ycritic = self.nn_layer(dropped1, out1, self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
 			#ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			#ycritic = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
-			#ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			
 			hidden = ycritic
 			#Recurrent network for temporal dependencies
@@ -1068,6 +1070,8 @@ class Worker():
 		self.env = game
 		self.rBuffer = replayBuffer
 		self.nbrStepPerReplay = nbrStepPerReplay
+		if self.number != 0 :
+			self.nbrStepPerReplay = 2*self.nbrStepPerReplay
         
 	def train(self,rollout,sess,gamma,bootstrap_value):
 		rollout = np.array(rollout)
@@ -1317,7 +1321,7 @@ class Worker():
 							if remainingSteps < 0 :
 								d = True
 							
-							'''
+							
 							if logit > 100 :
 								#NETWORK-RELATED SUMMARIES :
 								if self.number == 0:
@@ -1350,7 +1354,7 @@ class Worker():
 								logit = 0
 							else :
 								logit += 1
-							'''
+							
 							
 							if len(self.rBuffer) > self.nbrStepPerReplay:
 								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)

@@ -212,9 +212,10 @@ class GazeboRL :
 
 
 class Swarm1GazeboRL(GazeboRL) :
-	def __init__(self,port=11311,energy_based=False):
+	def __init__(self,port=11311,energy_based=False, coupledSystem=False):
 		self.continuousActions = False
 		self.energy_based = energy_based
+		self.coupledSystem = coupledSystem
 		
 		self.port = port
 		self.envdict = os.environ
@@ -243,6 +244,8 @@ class Swarm1GazeboRL(GazeboRL) :
 		observationsList = []
 		observationsList.append('/robot_model_teleop_0/OMNIVIEW')
 		observationsList.append('/robot_model_teleop_0/odom_diffdrive')
+		if self.coupledSystem :
+			observationsList.append('/robot_model_teleop_0/cmd_vel_controlLaw')
 		
 		# PUBLISHERS :
 		pubsCom = []
@@ -442,7 +445,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		self.rewardsQueues[self.rewardsList[0]].append( r)
 		
 		self.rMutex.release()
-		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: ODOMETRY')
+		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: Reward')
 	
 	
 	def callbackOMNIVIEW(self, omniview ) :
@@ -452,4 +455,12 @@ class Swarm1GazeboRL(GazeboRL) :
 		
 		self.rMutex.release()
 		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: OMNIVIEW')
+	
+	def callbackCONTROLLAW(self, cmd_vel ) :
+		self.rMutex.acquire()
+		#rospy.loginfo(cmd_vel)
+		self.observationsQueues[self.observationsList[2]].append( cmd_vel)
+		
+		self.rMutex.release()
+		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: cmd_vel_controlLaw')
 	
