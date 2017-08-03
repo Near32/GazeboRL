@@ -68,7 +68,7 @@ class GazeboRL :
 		self.rMutex = Lock()
 	
 	def init_node(self) :
-		rospy.init_node('GazeboRL_node', anonymous=False)
+		rospy.init_node('GazeboRL_node', anonymous=False)#, xmlrpc_port=self.port)#,tcpros_port=self.port)
 		rospy.on_shutdown(self.close)
 			
 	def make(self) :

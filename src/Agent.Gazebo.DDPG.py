@@ -76,7 +76,7 @@ rec = False
 # In[35]:
 
 a_bound = 1.0
-maxReplayBufferSize = 100000#2500
+maxReplayBufferSize = 50000#100000#2500
 max_episode_length = 200
 updateT = 1e-0
 
@@ -112,10 +112,10 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 3
+num_workers = 1
 threadExploration = False
 
-lr=1e-4
+lr=3e-4
 #lr=1e-3
 
 if useGAZEBO :
@@ -710,7 +710,7 @@ class AC_Network():
 			shape_out = rnn_out.get_shape().as_list()
 
 			#scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
-			scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
+			scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
 			policy = tf.multiply(scaled_out, self.a_bound)	
 			
 			return policy
@@ -1214,7 +1214,7 @@ class Worker():
 				
 						remainingSteps = max_episode_length   
 						actions = []   
-						a_noise = 0.0
+						a_noise = np.zeros(a_size)
 						time_log = 0
 						time_log_print = 50
 						time_mean = 0.0
@@ -1258,12 +1258,13 @@ class Worker():
 							'''
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
-							scale = self.local_network.a_bound/10.0#10.0
+							scale = self.local_network.a_bound/1.0#10.0
 							theta = 0.15
-							sigma = 0.3
-							a_noise += theta*(0.0-a_noise)+sigma*np.random.normal(loc=0.0,scale=scale)
+							sigma = 0.3*scale
 							a_backup = a[0]
-							a[0] += a_noise
+							for i in range(a_size) :
+								a_noise[i] += theta*(0.0-a_noise[i])+sigma*np.random.normal(loc=0.0,scale=1.0)
+								a[0,i] += a_noise[i]
 							
 							'''
 							a_noise =  (1. / (1. + episode_count))
@@ -1271,7 +1272,7 @@ class Worker():
 							'''
 							
 							#if self.number == 0 :
-							#	print('state : {} ; policy : {} ; noise : {}'.format(s, a_backup,a_noise) )
+							#	rospy.loginfo('state : {} ; policy : {} ; noise : {}'.format(s, a_backup,a_noise) )
 
 							if useGAZEBO :
 								s1, r, d, _ = envstep(self.env, a[0])
