@@ -99,7 +99,7 @@ updateTauTarget = 1e-3
 if useGAZEBO :
 	nbrStepsPerReplay = 4#32
 	if fromState :
-		nbrStepsPerReplay = 32
+		nbrStepsPerReplay = 64
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -179,7 +179,7 @@ def envstep(env,action) :
 		
 	return outimg, outr, outdone, outinfo
 	
-def envstep(env,action) :
+def envstepstate(env,action) :
 	output = env.step(action)
 	outstate = None
 	outr = None
@@ -188,13 +188,16 @@ def envstep(env,action) :
 	
 	if output[0] is not None :
 		for topic in output[0].keys() :
-			if 'model_state' in topic :
+			if 'RL/state' in topic :
 				#let us collect relevant data :
-				
+				r = topic.data[0]
+				theta = topic.data[1]
+				robs = topic.data[2]
+				thetaobs = topic.data[3]
 				#let us fill in the return value :
-				outstate = np.zeros(shape=s_size)
+				outstate = np.array([r, theta, robs, thetaobs]).reshape((s_size/nbrskipframe))
 	else :
-		outstate = np.zeros(shape=s_size)
+		outstate = np.zeros(shape=s_size/nbrskipframe)
 	
 	if output[1] is not None :
 		outr = output[1]['/RL/reward'].data

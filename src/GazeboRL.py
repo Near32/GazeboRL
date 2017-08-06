@@ -241,15 +241,19 @@ class Swarm1GazeboRL(GazeboRL) :
 		subsCom = []
 		subsCom.append(Image)
 		subsCom.append(Odometry)
+		if self.fromState :
+			subsCom.append(ModelStates)
+		if self.coupledSystem :
+			subsCom.append(Twist)
 		commands['subs'] = subsCom
 		
 		observationsList = []
 		observationsList.append('/robot_model_teleop_0/OMNIVIEW')
 		observationsList.append('/robot_model_teleop_0/odom_diffdrive')
 		if self.fromState:
-			observationsList.append('/gazebo/get_model_state')
+			observationsList.append('/RL/state')
 		if self.coupledSystem :
-			observationsList.append('/robot_model_teleop_0/cmd_vel_controlLaw')
+			observationsList.append('/RL/zoh/robot_model_teleop_0/cmd_vel_controlLaw')
 		
 		# PUBLISHERS :
 		pubsCom = []
@@ -289,11 +293,13 @@ class Swarm1GazeboRL(GazeboRL) :
 		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		# MODEL_STATE :
-		self.subscribers[self.observationsList[2] ] = rospy.Subscriber( self.observationsList[2], self.commands['subs'][2], self.callbackMODELSTATE )
+		if self.fromState :
+			self.subscribers[self.observationsList[2] ] = rospy.Subscriber( self.observationsList[2], self.commands['subs'][2], self.callbackMODELSTATE )
 		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		# CONTROLLAW :
-		self.subscribers[self.observationsList[3] ] = rospy.Subscriber( self.observationsList[3], self.commands['subs'][3], self.callbackCONTROLLAW )
+		if self.coupledSystem :
+			self.subscribers[self.observationsList[3] ] = rospy.Subscriber( self.observationsList[3], self.commands['subs'][3], self.callbackCONTROLLAW )
 		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		#reward :

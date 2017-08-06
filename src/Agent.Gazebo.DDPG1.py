@@ -117,19 +117,18 @@ num_workers = 4
 threadExploration = False
 
 #lr=3e-4
-lr=5e-4
+lr=3e-4
 #lr=1e-3
 
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG1-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
 else :	
-	model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG1-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
-lr=1e-4
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -638,7 +637,7 @@ class AC_Network():
 			
 				shape_conv = rmpc3_do.get_shape().as_list()
 				shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
-				out1 = 256
+				out1 = 512
 				fc_x_input = tf.reshape( rmpc3_do, shape_fc )
 				convnet = fc_x_input
 			else :
@@ -669,8 +668,8 @@ class AC_Network():
 			'''
 			#yactor = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase,'actor_layerOutput', act=tf.nn.relu, std=1e-2, uniform=False)
 			#yactor = self.nn_layer(dropped1, out1, self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			#yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			#yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
 			
 			hidden = yactor
 			#Recurrent network for temporal dependencies
@@ -712,8 +711,8 @@ class AC_Network():
 				
 			shape_out = rnn_out.get_shape().as_list()
 
-			#scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
-			scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
+			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
+			#scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
 			policy = tf.multiply(scaled_out, self.a_bound)	
 			
 			return policy
@@ -727,8 +726,8 @@ class AC_Network():
 			# CRITIC :
 			out1 = 512
 			#hidden1 = self.nn_layerBN(convnet, self.s_size, out1, phase, 'critic_layer1', act=tf.nn.relu)
-			#hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
-			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
+			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
+			dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			out2 = 256
 			#hidden2 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
@@ -738,9 +737,9 @@ class AC_Network():
 			
 			#ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
 			#ycritic = self.nn_layer(dropped1, out1, self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
-			#ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			#ycritic = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
-			ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			#ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			
 			hidden = ycritic
 			#Recurrent network for temporal dependencies
@@ -1263,13 +1262,14 @@ class Worker():
 							'''
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
-							scale = self.local_network.a_bound/1.0#10.0
-							theta = 0.15
-							sigma = 0.3*scale
-							a_backup = a[0]
-							for i in range(a_size) :
-								a_noise[i] += theta*(0.0-a_noise[i])+sigma*np.random.normal(loc=0.0,scale=1.0)
-								a[0,i] += a_noise[i]
+							if episode_count%2 :
+								scale = self.local_network.a_bound/1.0#10.0
+								theta = 0.15
+								sigma = 0.3*scale
+								a_backup = a[0]
+								for i in range(a_size) :
+									a_noise[i] += theta*(0.0-a_noise[i])+sigma*np.random.normal(loc=0.0,scale=1.0)
+									a[0,i] += a_noise[i]
 							
 							'''
 							a_noise =  (1. / (1. + episode_count))
