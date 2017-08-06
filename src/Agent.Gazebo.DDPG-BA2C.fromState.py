@@ -81,8 +81,8 @@ rec = False
 # In[35]:
 
 a_bound = 1.0
-maxReplayBufferSize = 50000#100000#2500
-max_episode_length = 200
+maxReplayBufferSize = 200000#100000#2500
+max_episode_length = 400
 updateT = 1e-0
 
 #updateTauTarget = 1e-6
@@ -100,7 +100,7 @@ updateTauTarget = 1e-3
 if useGAZEBO :
 	nbrStepsPerReplay = 4#32
 	if fromState :
-		nbrStepsPerReplay = 64
+		nbrStepsPerReplay = 16
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -119,11 +119,11 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 1
+num_workers = 5
 threadExploration = False
 
-#lr=3e-4
-lr=5e-4
+lr=1e-4
+#lr=5e-4
 #lr=1e-3
 
 if useGAZEBO :
@@ -1215,7 +1215,7 @@ class Worker():
 		
 		    
 	def work(self,max_episode_length,gamma,sess,coord,saver):
-		LoopRate = rospy.Rate(60)
+		LoopRate = rospy.Rate(100)
 		episode_count = sess.run(self.global_episodes)
 		summary_count = 0
 		total_steps = 0
@@ -1233,6 +1233,8 @@ class Worker():
 			sess.run(self.update_ops_thread_init)
 			sess.run(self.update_ops_thread_target_init)
 			print('Thread {} synchronized...'.format(self.number))
+			
+			
 			
 			while not coord.should_stop():
 				try :
@@ -1262,7 +1264,7 @@ class Worker():
 							if self.fromState==False :
 								s = preprocess(s, img_size[0], img_size[1] )
 						
-						episode_frames.append(s)
+						#episode_frames.append(s)
 					
 						if self.rec :
 							#TODO :
@@ -1274,6 +1276,12 @@ class Worker():
 						time_log = 0
 						time_log_print = 50
 						time_mean = 0.0
+						
+						
+						
+						# START EPISODE :
+						#
+						#
 						while d == False :
 							start = time()
 							remainingSteps -= 1
@@ -1314,13 +1322,14 @@ class Worker():
 							'''
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
-							scale = self.local_network.a_bound/1.0#10.0
-							theta = 0.15
-							sigma = 0.3*scale
-							a_backup = a[0]
-							for i in range(a_size) :
-								a_noise[i] += theta*(0.0-a_noise[i])+sigma*np.random.normal(loc=0.0,scale=1.0)
-								a[0,i] += a_noise[i]
+							if episode_count%2 :
+								scale = self.local_network.a_bound/1.0#10.0
+								theta = 0.15
+								sigma = 0.3*scale
+								a_backup = a[0]
+								for i in range(a_size) :
+									a_noise[i] += theta*(0.0-a_noise[i])+sigma*np.random.normal(loc=0.0,scale=1.0)
+									a[0,i] += a_noise[i]
 							
 							'''
 							a_noise =  (1. / (1. + episode_count))
@@ -1337,7 +1346,7 @@ class Worker():
 								if self.number == 0:
 									self.env.render()
 
-							episode_frames.append(s1)
+							#episode_frames.append(s1)
 							
 							if self.useGAZEBO :
 								if self.fromState==False:
@@ -1361,7 +1370,7 @@ class Worker():
 							
 							step = [s,a,r,s1,d,q[0]]
 							episode_buffer.append(step)
-							self.rBuffer.append(step)
+							#self.rBuffer.append(step)
 							
 							episode_values.append(q[0])
 							actions.append(a[0])
@@ -1410,9 +1419,9 @@ class Worker():
 								logit += 1
 							
 							
-							if len(self.rBuffer) > self.nbrStepPerReplay:
-								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
-								q_loss += np.mean(v_l)
+							#if len(self.rBuffer) > self.nbrStepPerReplay:
+							#	v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
+							#	q_loss += np.mean(v_l)
 							
 							if self.useGAZEBO :
 								LoopRate.sleep()
@@ -1432,8 +1441,10 @@ class Worker():
 
 						#END OF EPISODE WHILE LOOP...
 						
+						# DATA HANDLING :
+						#
+						#	
 						actions = np.vstack(actions)
-						
 						if self.number == 0 :
 							sentence = 'episode:{} / step:{} / mean action: {} / dev action : {} / cumulative reward: {}'.format(episode_count,episode_step_count,np.mean( actions), np.std(actions),episode_reward)
 							if self.useGAZEBO :
@@ -1450,8 +1461,8 @@ class Worker():
 
 						#Let us add this episode_buffer to the replayBuffer :
 						#self.rBuffer.append(episode_buffer)
-						#for el in episode_buffer :
-						#	self.rBuffer.append(el)
+						for el in episode_buffer :
+							self.rBuffer.append(el)
 						
 						while len(self.rBuffer) > maxReplayBufferSize :
 							del self.rBuffer[0]
@@ -1461,15 +1472,25 @@ class Worker():
 							if episode_count % 5 == 0 and episode_count != 0:
 								if self.name == 'worker_0' and episode_count % 25 == 0:
 									time_per_step = 0.05
-									images = np.array(episode_frames)
-									if make_gif_log :
-										make_gif(images,'./frames/image'+str(episode_count)+'.gif',
-											duration=len(images)*time_per_step,true_image=True,salience=False)
+									#images = np.array(episode_frames)
+									#if make_gif_log :
+									#	make_gif(images,'./frames/image'+str(episode_count)+'.gif',
+									#		duration=len(images)*time_per_step,true_image=True,salience=False)
 							if episode_count % 5 == 0 and self.name == 'worker_0':
 								saver.save(sess,self.model_path+'/model-'+str(episode_count)+'.cptk')
 								print ("Saved Model")
 							
 							sess.run(self.increment)
+						#
+						#-----------------------------------------------------
+						
+						# TRAINING :
+						#
+						#
+						for i in range(episode_step_count) :
+							if len(self.rBuffer) > self.nbrStepPerReplay:
+								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
+								q_loss += np.mean(v_l)
 						
 						# TRAIN ON THIS EPISODE :
 						# THIS IS CORRELATED... might not be good to train on it... we need to keep it off-policy since the action are randomly choosen...
@@ -1507,13 +1528,14 @@ class Worker():
 						
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train( rollout,sess,gamma,q1)
 						'''
-
+						#
+						#---------------------------------------------------
 					#END OF IF SELF.NUMBER == 0
 					
 					# Update the network using the experience replay buffer:
-					if len(self.rBuffer) > 0:
-						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
-						
+					if len(self.rBuffer) > self.nbrStepPerReplay:
+						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)	
+								
 						if self.number == 0 :
 							mean_reward = np.mean(self.episode_rewards[-5:])
 							mean_length = np.mean(self.episode_lengths[-5:])
@@ -1535,19 +1557,18 @@ class Worker():
 							summary.value.add(tag='Losses/Q Loss', simple_value=float(q_loss)/(episode_step_count+1))
 							self.summary_writer.add_summary(summary, episode_count)
 							self.summary_writer.flush()
+							episode_count += 1
 						
 					else :
 						sleep(5)
 
-					episode_count += 1
-		      
 				except Exception as e :
 					print('EXCEPTION HANDLED : '+str(e)+' :: '+str(sys.exc_info()[0]) )
 
 
 	def train_on_rBuffer(self,sess) :
 		a1 = None
-		idxSteps = np.random.choice(len(self.rBuffer),self.nbrStepPerReplay)
+		idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
 		
 		rollout = np.vstack( [ self.rBuffer[idxS] for idxS in idxSteps ] )
 		
