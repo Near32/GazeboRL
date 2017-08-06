@@ -11,7 +11,7 @@ import numpy as np
 from sensor_msgs.msg import Image
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Float64MultiArray
 from gazebo_msgs.msg import ModelStates
 import os
 
@@ -233,7 +233,10 @@ class Swarm1GazeboRL(GazeboRL) :
 		if energy_based == False :
 			launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.launch')
 		else :
-			launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+			if self.fromState == False :
+				launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+			else :
+				launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.fromState.launch')
 		
 		commands['launch'] = launchCom
 		
@@ -242,7 +245,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		subsCom.append(Image)
 		subsCom.append(Odometry)
 		if self.fromState :
-			subsCom.append(ModelStates)
+			subsCom.append(Float64MultiArray)
 		if self.coupledSystem :
 			subsCom.append(Twist)
 		commands['subs'] = subsCom
@@ -299,7 +302,10 @@ class Swarm1GazeboRL(GazeboRL) :
 		
 		# CONTROLLAW :
 		if self.coupledSystem :
-			self.subscribers[self.observationsList[3] ] = rospy.Subscriber( self.observationsList[3], self.commands['subs'][3], self.callbackCONTROLLAW )
+			if self.fromState :
+				self.subscribers[self.observationsList[3] ] = rospy.Subscriber( self.observationsList[3], self.commands['subs'][3], self.callbackCONTROLLAW )
+			else :
+				self.subscribers[self.observationsList[2] ] = rospy.Subscriber( self.observationsList[2], self.commands['subs'][3], self.callbackCONTROLLAW )
 		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		#reward :
@@ -476,7 +482,7 @@ class Swarm1GazeboRL(GazeboRL) :
 	
 	def callbackMODELSTATE(self, model_states ) :
 		self.rMutex.acquire()
-		self.observationsQueues[self.observationsList[3]].append( model_states)
+		self.observationsQueues[self.observationsList[2]].append( model_states)
 		
 		self.rMutex.release()
 		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: gazebo/model_states')
@@ -484,7 +490,10 @@ class Swarm1GazeboRL(GazeboRL) :
 	def callbackCONTROLLAW(self, cmd_vel ) :
 		self.rMutex.acquire()
 		#rospy.loginfo(cmd_vel)
-		self.observationsQueues[self.observationsList[3]].append( cmd_vel)
+		if self.fromState :
+			self.observationsQueues[self.observationsList[3]].append( cmd_vel)
+		else :
+			self.observationsQueues[self.observationsList[2]].append( cmd_vel)
 		
 		self.rMutex.release()
 		#rospy.loginfo('DEBUG :: GazeboRL : received an observation from Gazebo... :: cmd_vel_controlLaw')

@@ -3,6 +3,7 @@
 ## TODO : implement the target network trick ?
 useGAZEBO = True
 fromState = True
+coupledSystem = False
 
 show = False
 load_model = False
@@ -51,7 +52,7 @@ if useGAZEBO :
 
 if useGAZEBO :
 	env= list()
-	env.append( Swarm1GazeboRL(base_port,energy_based, fromState) )
+	env.append( Swarm1GazeboRL(base_port,energy_based, coupledSystem=coupledSystem, fromState=fromState) )
 	base_port += 1
 	env[0].make()
 	print('\n\nwait for 5 sec...\n\n')
@@ -118,7 +119,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 1
 threadExploration = False
 
 #lr=3e-4
@@ -127,11 +128,13 @@ lr=5e-4
 
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
+	if fromState :
+		model_path = model_path+'+FromState'
 else :	
-	model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
 
@@ -190,14 +193,15 @@ def envstepstate(env,action) :
 		for topic in output[0].keys() :
 			if 'RL/state' in topic :
 				#let us collect relevant data :
-				r = topic.data[0]
-				theta = topic.data[1]
-				robs = topic.data[2]
-				thetaobs = topic.data[3]
+				values = output[0][topic]
+				r = values.data[0]
+				theta = values.data[1]
+				robs = values.data[2]
+				thetaobs = values.data[3]
 				#let us fill in the return value :
-				outstate = np.array([r, theta, robs, thetaobs]).reshape((s_size/nbrskipframe))
+				outstate = np.array([r, theta, robs, thetaobs]).reshape((1,s_size/nbrskipframe, nbrskipframe))
 	else :
-		outstate = np.zeros(shape=s_size/nbrskipframe)
+		outstate = np.zeros(shape=(1,s_size/nbrskipframe,nbrskipframe))
 	
 	if output[1] is not None :
 		outr = output[1]['/RL/reward'].data
@@ -599,9 +603,10 @@ class AC_Network():
 			
 			#Input and visual encoding layers
 			#PLACEHOLDER :
-			#PLACEHOLDER :
 			if self.useGAZEBO :
 				inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
+				if self.fromState :
+					inputs = tf.placeholder(shape=[None,self.s_size/self.nbrskipframe, self.nbrskipframe],dtype=tf.float32,name='inputs')
 			else :
 				inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
@@ -615,73 +620,76 @@ class AC_Network():
 	def create_convnet(self, inputs, scope, keep_prob, phase) :
 		with tf.variable_scope(scope):
 			
-			if self.useGAZEBO and (self.fromState==False) :
-				imageIn = tf.reshape(inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
+			if self.useGAZEBO :
+				if self.fromState==False :
+					imageIn = tf.reshape(inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
 			
-				# CONV LAYER 1 :
-				shape_input = imageIn.get_shape().as_list()
-				input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-				nbr_filter1 = 16
-				output_dim1 = [ nbr_filter1]
-				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
-				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
-				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=10, stride=6,padding='SAME')
-				rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
+					# CONV LAYER 1 :
+					shape_input = imageIn.get_shape().as_list()
+					input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+					nbr_filter1 = 16
+					output_dim1 = [ nbr_filter1]
+					#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
+					#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
+					relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=10, stride=6,padding='SAME')
+					rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
 		
-				#LAYER STN 1 :
-				#shape_inputstn = rmpc1_do.get_shape().as_list()
-				#shape_inputstn = self.x_tensor.get_shape().as_list()
-				#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-				#layerstn_name = 'stn1'
-				#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( rmpc1_do, inputstn_dim, layerstn_name, self.keep_prob)
-				#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( self.x_tensor, inputstn_dim, layerstn_name, self.keep_prob)
-				#shape_input = h_trans_def1.get_shape().as_list()
-				#input_dim2 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+					#LAYER STN 1 :
+					#shape_inputstn = rmpc1_do.get_shape().as_list()
+					#shape_inputstn = self.x_tensor.get_shape().as_list()
+					#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
+					#layerstn_name = 'stn1'
+					#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( rmpc1_do, inputstn_dim, layerstn_name, self.keep_prob)
+					#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( self.x_tensor, inputstn_dim, layerstn_name, self.keep_prob)
+					#shape_input = h_trans_def1.get_shape().as_list()
+					#input_dim2 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
-				# CONV LAYER 2 :
-				nbr_filter2 = 32
-				output_dim2 = [ nbr_filter2]
-				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
-				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-				relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=3, padding='SAME')
-				rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
+					# CONV LAYER 2 :
+					nbr_filter2 = 32
+					output_dim2 = [ nbr_filter2]
+					#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
+					#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
+					relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=3, padding='SAME')
+					rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
 		
-				#LAYER STN 2 :
-				#shape_inputstn = rmpc2_do.get_shape().as_list()
-				#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-				#layerstn_name = 'stn2'
-				#h_trans_def2, out_size2, self.thetas2 = self.nn_layer_stn( rmpc2_do, inputstn_dim, layerstn_name, self.keep_prob)
-				#shape_input = h_trans_def2.get_shape().as_list()
-				#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+					#LAYER STN 2 :
+					#shape_inputstn = rmpc2_do.get_shape().as_list()
+					#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
+					#layerstn_name = 'stn2'
+					#h_trans_def2, out_size2, self.thetas2 = self.nn_layer_stn( rmpc2_do, inputstn_dim, layerstn_name, self.keep_prob)
+					#shape_input = h_trans_def2.get_shape().as_list()
+					#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
-				# CONV LAYER 3 :
-				nbr_filter3 = 32
-				output_dim3 = [ nbr_filter3]
-				#relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-				relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=tf.nn.relu, filter_size=3, stride=2, padding='SAME')
-				rmpc3_do = tf.nn.dropout(relumaxpoolconv3,keep_prob)
+					# CONV LAYER 3 :
+					nbr_filter3 = 32
+					output_dim3 = [ nbr_filter3]
+					#relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
+					relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=tf.nn.relu, filter_size=3, stride=2, padding='SAME')
+					rmpc3_do = tf.nn.dropout(relumaxpoolconv3,keep_prob)
 		
-				#LAYER STN 3 :
-				#shape_inputstn = rmpc3_do.get_shape().as_list()
-				#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-				#layerstn_name = 'stn3'
-				#h_trans_def3, out_size3, self.thetas3 = self.nn_layer_stn( rmpc3_do, inputstn_dim, layerstn_name, self.keep_prob)
-				#shape_input = h_trans_def3.get_shape().as_list()
-				#input_dim4 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+					#LAYER STN 3 :
+					#shape_inputstn = rmpc3_do.get_shape().as_list()
+					#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
+					#layerstn_name = 'stn3'
+					#h_trans_def3, out_size3, self.thetas3 = self.nn_layer_stn( rmpc3_do, inputstn_dim, layerstn_name, self.keep_prob)
+					#shape_input = h_trans_def3.get_shape().as_list()
+					#input_dim4 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
-				# CONV LAYER 4 :
-				'''
-				nbr_filter4 = 128
-				output_dim4 = [ nbr_filter4]
-				relumaxpoolconv4, input_dim5 = self.layer_conv2dBNAct(input_tensor=rmpc3_do, input_dim=input_dim4, output_dim=output_dim4, phase=self.phase, layer_name='conv3', act=tf.nn.relu, filter_size=3, stride=1,padding='SAME')
-				rmpc4_do = tf.nn.dropout(relumaxpoolconv4,self.keep_prob)		
-				'''
+					# CONV LAYER 4 :
+					'''
+					nbr_filter4 = 128
+					output_dim4 = [ nbr_filter4]
+					relumaxpoolconv4, input_dim5 = self.layer_conv2dBNAct(input_tensor=rmpc3_do, input_dim=input_dim4, output_dim=output_dim4, phase=self.phase, layer_name='conv3', act=tf.nn.relu, filter_size=3, stride=1,padding='SAME')
+					rmpc4_do = tf.nn.dropout(relumaxpoolconv4,self.keep_prob)		
+					'''
 			
-				shape_conv = rmpc3_do.get_shape().as_list()
-				shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
-				out1 = 256
-				fc_x_input = tf.reshape( rmpc3_do, shape_fc )
-				convnet = fc_x_input
+					shape_conv = rmpc3_do.get_shape().as_list()
+					shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
+					out1 = 256
+					fc_x_input = tf.reshape( rmpc3_do, shape_fc )
+					convnet = fc_x_input
+				else :
+					convnet = tf.reshape(inputs,shape=[-1,self.s_size])
 			else :
 				convnet = inputs
 				
@@ -1080,7 +1088,7 @@ class Worker():
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
 		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e0)}
-		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=useGAZEBO, fromState=self.fromState)
+		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=self.useGAZEBO, fromState=self.fromState)
 		self.number = name        
 		self.model_path = model_path
 		self.global_episodes = global_episodes
@@ -1586,7 +1594,7 @@ with tf.device("/cpu:0"):
 #with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
 	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
-	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO) # Generate global network 
+	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState) # Generate global network 
 	workers = []
 	replayBuffer = []
 	
@@ -1597,7 +1605,7 @@ with tf.device("/cpu:0"):
 			if threadExploration == False :
 				game = env[0]
 			else :	
-				game = Swarm1GazeboRL(base_port,energy_based)
+				game = Swarm1GazeboRL(base_port,energy_based, coupledSystem=coupledSystem, fromState=fromState)
 				base_port += 1
 				game.make()
 				print('\n\nCreation of the environment :: wait for 2 sec...\n\n')
