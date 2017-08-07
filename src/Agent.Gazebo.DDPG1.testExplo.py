@@ -2,13 +2,11 @@
 
 ## TODO : implement the target network trick ?
 useGAZEBO = True
-fromState = True
-coupledSystem = False
 
 show = False
-load_model = False
+load_model = True
 energy_based = True
-base_port = 11335
+base_port = 11315
 reward_bound = 1e1
 
 import threading
@@ -52,7 +50,7 @@ if useGAZEBO :
 
 if useGAZEBO :
 	env= list()
-	env.append( Swarm1GazeboRL(base_port,energy_based, coupledSystem=coupledSystem, fromState=fromState) )
+	env.append( Swarm1GazeboRL(base_port,energy_based) )
 	base_port += 1
 	env[0].make()
 	print('\n\nwait for 5 sec...\n\n')
@@ -69,8 +67,6 @@ if useGAZEBO :
 	nbrskipframe = 1
 	#img_size = (120,160,nbrskipframe)
 	img_size = (120,120,nbrskipframe)
-	if fromState :
-		img_size= (1,4,nbrskipframe)
 else :
 	nbrskipframe = 1
 	img_size = (84,84,nbrskipframe)
@@ -81,8 +77,8 @@ rec = False
 # In[35]:
 
 a_bound = 1.0
-maxReplayBufferSize = 200000#100000#2500
-max_episode_length = 1200
+maxReplayBufferSize = 50000#100000#2500
+max_episode_length = 200
 updateT = 1e-0
 
 #updateTauTarget = 1e-6
@@ -99,8 +95,6 @@ updateTauTarget = 1e-3
 #nbrStepsPerReplay = 32
 if useGAZEBO :
 	nbrStepsPerReplay = 4#32
-	if fromState :
-		nbrStepsPerReplay = 32
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -119,22 +113,20 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 3
+num_workers = 4
 threadExploration = False
 
-lr=1e-3
-#lr=5e-4
+#lr=3e-4
+lr=3e-4
 #lr=1e-3
 
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './testExplo/DDPG1-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
-	if fromState :
-		model_path = model_path+'+FromState'
 else :	
-	model_path = './DDPG-BA2C-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './testExplo/DDPG1-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
 
@@ -182,44 +174,7 @@ def envstep(env,action) :
 		
 	return outimg, outr, outdone, outinfo
 	
-def envstepstate(env,action) :
-	output = env.step(action)
-	outstate = None
-	outr = None
-	outdone = False
-	outinfo = None
 	
-	if output[0] is not None :
-		for topic in output[0].keys() :
-			if 'RL/state' in topic :
-				#let us collect relevant data :
-				values = output[0][topic]
-				r = values.data[0]
-				theta = values.data[1]
-				robs = values.data[2]
-				thetaobs = values.data[3]
-				#let us fill in the return value :
-				outstate = np.array([r, theta, robs, thetaobs]).reshape((1,s_size/nbrskipframe, nbrskipframe))
-	else :
-		outstate = np.zeros(shape=(1,s_size/nbrskipframe,nbrskipframe))
-	
-	if output[1] is not None :
-		outr = output[1]['/RL/reward'].data
-	
-	if output[2] is not None :
-		outdone = output[2]
-		
-	if output[3] is not None :
-		outinfo = output[3]
-		
-	return outstate, outr, outdone, outinfo
-	
-	
-def envstep(env,action,fromState) :
-	if fromState == False :
-		return envstep(env,action)
-	else :
-		return envstepstate(env,action)	
 
 
 
@@ -292,9 +247,8 @@ def BNlayer(x, is_training, scope):
 # In[21]:
 
 class AC_Network():
-	def __init__(self,imagesize,s_size,h_size, a_size,a_bound,scope,trainer,tau=1e-2,rec=False,dropoutK=1.0,useGAZEBO=False, fromState=False):
+	def __init__(self,imagesize,s_size,h_size, a_size,a_bound,scope,trainer,tau=1e-2,rec=False,dropoutK=1.0,useGAZEBO=False):
 		self.useGAZEBO = useGAZEBO
-		self.fromState = fromState
 		self.imagesize = imagesize
 		self.nbrskipframe = imagesize[2]
 		self.s_size = s_size
@@ -516,7 +470,7 @@ class AC_Network():
 		
 			#Input and visual encoding layers
 			#PLACEHOLDER :
-			if self.useGAZEBO:
+			if self.useGAZEBO :
 				self.inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
 			else :
 				self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
@@ -603,10 +557,9 @@ class AC_Network():
 			
 			#Input and visual encoding layers
 			#PLACEHOLDER :
+			#PLACEHOLDER :
 			if self.useGAZEBO :
 				inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
-				if self.fromState :
-					inputs = tf.placeholder(shape=[None,self.s_size/self.nbrskipframe, self.nbrskipframe],dtype=tf.float32,name='inputs')
 			else :
 				inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
@@ -621,75 +574,72 @@ class AC_Network():
 		with tf.variable_scope(scope):
 			
 			if self.useGAZEBO :
-				if self.fromState==False :
-					imageIn = tf.reshape(inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
+				imageIn = tf.reshape(inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
 			
-					# CONV LAYER 1 :
-					shape_input = imageIn.get_shape().as_list()
-					input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-					nbr_filter1 = 16
-					output_dim1 = [ nbr_filter1]
-					#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
-					#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
-					relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=10, stride=6,padding='SAME')
-					rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
+				# CONV LAYER 1 :
+				shape_input = imageIn.get_shape().as_list()
+				input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+				nbr_filter1 = 16
+				output_dim1 = [ nbr_filter1]
+				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
+				#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
+				relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=10, stride=6,padding='SAME')
+				rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
 		
-					#LAYER STN 1 :
-					#shape_inputstn = rmpc1_do.get_shape().as_list()
-					#shape_inputstn = self.x_tensor.get_shape().as_list()
-					#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-					#layerstn_name = 'stn1'
-					#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( rmpc1_do, inputstn_dim, layerstn_name, self.keep_prob)
-					#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( self.x_tensor, inputstn_dim, layerstn_name, self.keep_prob)
-					#shape_input = h_trans_def1.get_shape().as_list()
-					#input_dim2 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+				#LAYER STN 1 :
+				#shape_inputstn = rmpc1_do.get_shape().as_list()
+				#shape_inputstn = self.x_tensor.get_shape().as_list()
+				#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
+				#layerstn_name = 'stn1'
+				#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( rmpc1_do, inputstn_dim, layerstn_name, self.keep_prob)
+				#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( self.x_tensor, inputstn_dim, layerstn_name, self.keep_prob)
+				#shape_input = h_trans_def1.get_shape().as_list()
+				#input_dim2 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
-					# CONV LAYER 2 :
-					nbr_filter2 = 32
-					output_dim2 = [ nbr_filter2]
-					#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
-					#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-					relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=3, padding='SAME')
-					rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
+				# CONV LAYER 2 :
+				nbr_filter2 = 32
+				output_dim2 = [ nbr_filter2]
+				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
+				#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
+				relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=3, padding='SAME')
+				rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
 		
-					#LAYER STN 2 :
-					#shape_inputstn = rmpc2_do.get_shape().as_list()
-					#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-					#layerstn_name = 'stn2'
-					#h_trans_def2, out_size2, self.thetas2 = self.nn_layer_stn( rmpc2_do, inputstn_dim, layerstn_name, self.keep_prob)
-					#shape_input = h_trans_def2.get_shape().as_list()
-					#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+				#LAYER STN 2 :
+				#shape_inputstn = rmpc2_do.get_shape().as_list()
+				#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
+				#layerstn_name = 'stn2'
+				#h_trans_def2, out_size2, self.thetas2 = self.nn_layer_stn( rmpc2_do, inputstn_dim, layerstn_name, self.keep_prob)
+				#shape_input = h_trans_def2.get_shape().as_list()
+				#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
-					# CONV LAYER 3 :
-					nbr_filter3 = 32
-					output_dim3 = [ nbr_filter3]
-					#relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-					relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=tf.nn.relu, filter_size=3, stride=2, padding='SAME')
-					rmpc3_do = tf.nn.dropout(relumaxpoolconv3,keep_prob)
+				# CONV LAYER 3 :
+				nbr_filter3 = 32
+				output_dim3 = [ nbr_filter3]
+				#relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
+				relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=tf.nn.relu, filter_size=3, stride=2, padding='SAME')
+				rmpc3_do = tf.nn.dropout(relumaxpoolconv3,keep_prob)
 		
-					#LAYER STN 3 :
-					#shape_inputstn = rmpc3_do.get_shape().as_list()
-					#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-					#layerstn_name = 'stn3'
-					#h_trans_def3, out_size3, self.thetas3 = self.nn_layer_stn( rmpc3_do, inputstn_dim, layerstn_name, self.keep_prob)
-					#shape_input = h_trans_def3.get_shape().as_list()
-					#input_dim4 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
+				#LAYER STN 3 :
+				#shape_inputstn = rmpc3_do.get_shape().as_list()
+				#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
+				#layerstn_name = 'stn3'
+				#h_trans_def3, out_size3, self.thetas3 = self.nn_layer_stn( rmpc3_do, inputstn_dim, layerstn_name, self.keep_prob)
+				#shape_input = h_trans_def3.get_shape().as_list()
+				#input_dim4 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
-					# CONV LAYER 4 :
-					'''
-					nbr_filter4 = 128
-					output_dim4 = [ nbr_filter4]
-					relumaxpoolconv4, input_dim5 = self.layer_conv2dBNAct(input_tensor=rmpc3_do, input_dim=input_dim4, output_dim=output_dim4, phase=self.phase, layer_name='conv3', act=tf.nn.relu, filter_size=3, stride=1,padding='SAME')
-					rmpc4_do = tf.nn.dropout(relumaxpoolconv4,self.keep_prob)		
-					'''
+				# CONV LAYER 4 :
+				'''
+				nbr_filter4 = 128
+				output_dim4 = [ nbr_filter4]
+				relumaxpoolconv4, input_dim5 = self.layer_conv2dBNAct(input_tensor=rmpc3_do, input_dim=input_dim4, output_dim=output_dim4, phase=self.phase, layer_name='conv3', act=tf.nn.relu, filter_size=3, stride=1,padding='SAME')
+				rmpc4_do = tf.nn.dropout(relumaxpoolconv4,self.keep_prob)		
+				'''
 			
-					shape_conv = rmpc3_do.get_shape().as_list()
-					shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
-					out1 = 256
-					fc_x_input = tf.reshape( rmpc3_do, shape_fc )
-					convnet = fc_x_input
-				else :
-					convnet = tf.reshape(inputs,shape=[-1,self.s_size])
+				shape_conv = rmpc3_do.get_shape().as_list()
+				shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
+				out1 = 512
+				fc_x_input = tf.reshape( rmpc3_do, shape_fc )
+				convnet = fc_x_input
 			else :
 				convnet = inputs
 				
@@ -718,8 +668,8 @@ class AC_Network():
 			'''
 			#yactor = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase,'actor_layerOutput', act=tf.nn.relu, std=1e-2, uniform=False)
 			#yactor = self.nn_layer(dropped1, out1, self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			#yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			#yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
 			
 			hidden = yactor
 			#Recurrent network for temporal dependencies
@@ -761,8 +711,8 @@ class AC_Network():
 				
 			shape_out = rnn_out.get_shape().as_list()
 
-			#scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
-			scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
+			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
+			#scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
 			policy = tf.multiply(scaled_out, self.a_bound)	
 			
 			return policy
@@ -776,8 +726,8 @@ class AC_Network():
 			# CRITIC :
 			out1 = 512
 			#hidden1 = self.nn_layerBN(convnet, self.s_size, out1, phase, 'critic_layer1', act=tf.nn.relu)
-			#hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
-			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
+			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
+			dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			out2 = 256
 			#hidden2 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
@@ -787,9 +737,9 @@ class AC_Network():
 			
 			#ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
 			#ycritic = self.nn_layer(dropped1, out1, self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
-			#ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			#ycritic = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
-			ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			#ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			
 			hidden = ycritic
 			#Recurrent network for temporal dependencies
@@ -1082,13 +1032,12 @@ class AC_Network():
 
 
 class Worker():
-	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1e-2, nbrStepPerReplay=15, useGAZEBO=True, fromState=True):
+	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1e-2, nbrStepPerReplay=15, useGAZEBO=True):
 		self.useGAZEBO = useGAZEBO
-		self.fromState = fromState
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
 		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e0)}
-		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=self.useGAZEBO, fromState=self.fromState)
+		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=useGAZEBO)
 		self.number = name        
 		self.model_path = model_path
 		self.global_episodes = global_episodes
@@ -1215,7 +1164,7 @@ class Worker():
 		
 		    
 	def work(self,max_episode_length,gamma,sess,coord,saver):
-		LoopRate = rospy.Rate(100)
+		LoopRate = rospy.Rate(60)
 		episode_count = sess.run(self.global_episodes)
 		summary_count = 0
 		total_steps = 0
@@ -1233,8 +1182,6 @@ class Worker():
 			sess.run(self.update_ops_thread_init)
 			sess.run(self.update_ops_thread_target_init)
 			print('Thread {} synchronized...'.format(self.number))
-			
-			
 			
 			while not coord.should_stop():
 				try :
@@ -1260,11 +1207,10 @@ class Worker():
 							s = self.env.reset()
 							if self.number == 0 :
 								rospy.loginfo('ENVIRONMENT RESETTED !')
-							s,dr,ddone,_ = envstep(self.env,dummy_action, self.fromState)
-							if self.fromState==False :
-								s = preprocess(s, img_size[0], img_size[1] )
+							s,dr,ddone,_ = envstep(self.env,dummy_action)
+							s = preprocess(s, img_size[0], img_size[1] )
 						
-						#episode_frames.append(s)
+						episode_frames.append(s)
 					
 						if self.rec :
 							#TODO :
@@ -1276,12 +1222,6 @@ class Worker():
 						time_log = 0
 						time_log_print = 50
 						time_mean = 0.0
-						
-						
-						
-						# START EPISODE :
-						#
-						#
 						while d == False :
 							start = time()
 							remainingSteps -= 1
@@ -1323,7 +1263,7 @@ class Worker():
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
 							if episode_count%2 :
-								scale = self.local_network.a_bound/1.0
+								scale = self.local_network.a_bound/1.0#10.0
 								theta = 0.15
 								sigma = 0.3*scale
 								a_backup = a[0]
@@ -1340,18 +1280,16 @@ class Worker():
 							#if self.number == 0 :
 							#	rospy.loginfo('state : {} ; policy : {} ; noise : {}'.format(s, a_backup,a_noise) )
 
-							if self.useGAZEBO :
-								s1, r, d, _ = envstep(self.env, a[0], self.fromState)
+							if useGAZEBO :
+								s1, r, d, _ = envstep(self.env, a[0])
 							else :
 								s1, r, d, _ = self.env.step(a)
 								if self.number == 0:
 									self.env.render()
 
-							#episode_frames.append(s1)
-							
-							if self.useGAZEBO :
-								if self.fromState==False:
-									s1 = preprocess(s1, img_size[0], img_size[1] )
+							episode_frames.append(s1)
+							if useGAZEBO :
+								s1 = preprocess(s1, img_size[0], img_size[1] )
 							else :
 								s1 = np.reshape(s1,(-1,self.master_network.s_size))
 							
@@ -1371,7 +1309,7 @@ class Worker():
 							
 							step = [s,a,r,s1,d,q[0]]
 							episode_buffer.append(step)
-							#self.rBuffer.append(step)
+							self.rBuffer.append(step)
 							
 							episode_values.append(q[0])
 							actions.append(a[0])
@@ -1420,9 +1358,9 @@ class Worker():
 								logit += 1
 							
 							
-							#if len(self.rBuffer) > self.nbrStepPerReplay:
-							#	v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
-							#	q_loss += np.mean(v_l)
+							if len(self.rBuffer) > self.nbrStepPerReplay:
+								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
+								q_loss += np.mean(v_l)
 							
 							if self.useGAZEBO :
 								LoopRate.sleep()
@@ -1442,12 +1380,8 @@ class Worker():
 
 						#END OF EPISODE WHILE LOOP...
 						
-						# DATA HANDLING :
-						#
-						#	
-						self.env.setPause(True)
-						
 						actions = np.vstack(actions)
+						
 						if self.number == 0 :
 							sentence = 'episode:{} / step:{} / mean action: {} / dev action : {} / cumulative reward: {}'.format(episode_count,episode_step_count,np.mean( actions), np.std(actions),episode_reward)
 							if self.useGAZEBO :
@@ -1464,8 +1398,8 @@ class Worker():
 
 						#Let us add this episode_buffer to the replayBuffer :
 						#self.rBuffer.append(episode_buffer)
-						for el in episode_buffer :
-							self.rBuffer.append(el)
+						#for el in episode_buffer :
+						#	self.rBuffer.append(el)
 						
 						while len(self.rBuffer) > maxReplayBufferSize :
 							del self.rBuffer[0]
@@ -1475,25 +1409,15 @@ class Worker():
 							if episode_count % 5 == 0 and episode_count != 0:
 								if self.name == 'worker_0' and episode_count % 25 == 0:
 									time_per_step = 0.05
-									#images = np.array(episode_frames)
-									#if make_gif_log :
-									#	make_gif(images,'./frames/image'+str(episode_count)+'.gif',
-									#		duration=len(images)*time_per_step,true_image=True,salience=False)
+									images = np.array(episode_frames)
+									if make_gif_log :
+										make_gif(images,'./frames/image'+str(episode_count)+'.gif',
+											duration=len(images)*time_per_step,true_image=True,salience=False)
 							if episode_count % 5 == 0 and self.name == 'worker_0':
 								saver.save(sess,self.model_path+'/model-'+str(episode_count)+'.cptk')
 								print ("Saved Model")
 							
 							sess.run(self.increment)
-						#
-						#-----------------------------------------------------
-						
-						# TRAINING :
-						#
-						#
-						if len(self.rBuffer) > self.nbrStepPerReplay:
-							for i in range(self.nbrStepPerReplay) :
-								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
-								q_loss += np.mean(v_l)
 						
 						# TRAIN ON THIS EPISODE :
 						# THIS IS CORRELATED... might not be good to train on it... we need to keep it off-policy since the action are randomly choosen...
@@ -1531,14 +1455,13 @@ class Worker():
 						
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train( rollout,sess,gamma,q1)
 						'''
-						#
-						#---------------------------------------------------
+
 					#END OF IF SELF.NUMBER == 0
 					
 					# Update the network using the experience replay buffer:
-					if len(self.rBuffer) > self.nbrStepPerReplay:
-						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)	
-								
+					if len(self.rBuffer) > 0:
+						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
+						
 						if self.number == 0 :
 							mean_reward = np.mean(self.episode_rewards[-5:])
 							mean_length = np.mean(self.episode_lengths[-5:])
@@ -1560,18 +1483,19 @@ class Worker():
 							summary.value.add(tag='Losses/Q Loss', simple_value=float(q_loss)/(episode_step_count+1))
 							self.summary_writer.add_summary(summary, episode_count)
 							self.summary_writer.flush()
-							episode_count += 1
 						
 					else :
 						sleep(5)
 
+					episode_count += 1
+		      
 				except Exception as e :
 					print('EXCEPTION HANDLED : '+str(e)+' :: '+str(sys.exc_info()[0]) )
 
 
 	def train_on_rBuffer(self,sess) :
 		a1 = None
-		idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
+		idxSteps = np.random.choice(len(self.rBuffer),self.nbrStepPerReplay)
 		
 		rollout = np.vstack( [ self.rBuffer[idxS] for idxS in idxSteps ] )
 		
@@ -1618,7 +1542,7 @@ with tf.device("/cpu:0"):
 #with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
 	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
-	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState) # Generate global network 
+	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO) # Generate global network 
 	workers = []
 	replayBuffer = []
 	
@@ -1629,7 +1553,7 @@ with tf.device("/cpu:0"):
 			if threadExploration == False :
 				game = env[0]
 			else :	
-				game = Swarm1GazeboRL(base_port,energy_based, coupledSystem=coupledSystem, fromState=fromState)
+				game = Swarm1GazeboRL(base_port,energy_based)
 				base_port += 1
 				game.make()
 				print('\n\nCreation of the environment :: wait for 2 sec...\n\n')

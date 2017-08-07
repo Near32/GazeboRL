@@ -1,8 +1,8 @@
 <launch>
   <arg name="world_file"  			default="$(find OPUSim)/launch/worlds/empty.world"/>
 	<arg name="gui" 							default="false"/>
-	<arg name="launchController" 	default="false"/>
-  <arg name="coupledSystem" 		default="0"/>
+	<arg name="launchController" 	default="true"/>
+  <arg name="coupledSystem" 		default="1"/>
   <arg name="posO0x" 						default="2.0"/>
   <arg name="posO0y" 						default="0.0"/>
 	<arg name="posO1x" 						default="-2.0"/>

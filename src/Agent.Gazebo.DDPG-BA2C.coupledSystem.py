@@ -3,7 +3,8 @@
 ## TODO : implement the target network trick ?
 useGAZEBO = True
 fromState = True
-coupledSystem = False
+coupledSystem = True
+strongCoupling = True
 
 show = False
 load_model = False
@@ -159,6 +160,7 @@ def preprocess(image, imghr=60, imgwr=320) :
 def envstep(env,action) :
 	output = env.step(action)
 	outimg = None
+	outcmd = None
 	outr = None
 	outdone = False
 	outinfo = None
@@ -168,8 +170,12 @@ def envstep(env,action) :
 			if 'OMNIVIEW' in topic :
 				img = np.array(ros2np(output[0][topic]))
 				outimg = img
+			if 'cmd_vel_controlLaw' in topic :
+				twist = output[0][topic]
+				outcmd = [twist.linear.x, twist.angular.z]
 	else :
 		outimg = np.zeros(shape=img_size)
+		outcmd = None
 	
 	if output[1] is not None :
 		outr = output[1]['/RL/reward'].data
@@ -179,12 +185,13 @@ def envstep(env,action) :
 		
 	if output[3] is not None :
 		outinfo = output[3]
-		
-	return outimg, outr, outdone, outinfo
+	
+	return (outimg, outcmd), outr, outdone, outinfo
 	
 def envstepstate(env,action) :
 	output = env.step(action)
 	outstate = None
+	outcmd = None
 	outr = None
 	outdone = False
 	outinfo = None
@@ -200,8 +207,12 @@ def envstepstate(env,action) :
 				thetaobs = values.data[3]
 				#let us fill in the return value :
 				outstate = np.array([r, theta, robs, thetaobs]).reshape((1,s_size/nbrskipframe, nbrskipframe))
+			if 'cmd_vel_controlLaw' in topic :
+				twist = output[0][topic]
+				outcmd = [twist.linear.x, twist.angular.z]
 	else :
 		outstate = np.zeros(shape=(1,s_size/nbrskipframe,nbrskipframe))
+		outcmd = None
 	
 	if output[1] is not None :
 		outr = output[1]['/RL/reward'].data
@@ -212,7 +223,7 @@ def envstepstate(env,action) :
 	if output[3] is not None :
 		outinfo = output[3]
 		
-	return outstate, outr, outdone, outinfo
+	return (outstate,outcmd), outr, outdone, outinfo
 	
 	
 def envstep(env,action,fromState) :
@@ -292,9 +303,11 @@ def BNlayer(x, is_training, scope):
 # In[21]:
 
 class AC_Network():
-	def __init__(self,imagesize,s_size,h_size, a_size,a_bound,scope,trainer,tau=1e-2,rec=False,dropoutK=1.0,useGAZEBO=False, fromState=False):
+	def __init__(self,imagesize,s_size,h_size, a_size,a_bound,scope,trainer,tau=1e-2,rec=False,dropoutK=1.0,useGAZEBO=False, fromState=False, strongCoupling=False):
 		self.useGAZEBO = useGAZEBO
 		self.fromState = fromState
+		self.strongCoupling = strongCoupling
+		
 		self.imagesize = imagesize
 		self.nbrskipframe = imagesize[2]
 		self.s_size = s_size
@@ -314,8 +327,8 @@ class AC_Network():
 		self.summary_ops = []
 		
 		#inputs, actions, policy, Vvalue, Qvalue, keep_prob, phase
-		self.inputs, self.actions, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase = self.create_network(self.scope)
-		self.t_inputs, self.t_actions, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network(self.scope+'_target')
+		self.inputs, self.actions, self.cmd, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase = self.create_network(self.scope)
+		self.t_inputs, self.t_actions, self.t_cmd, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network(self.scope+'_target')
 		
 		self.build_loss_functions()
 		
@@ -499,98 +512,7 @@ class AC_Network():
 			return actmaxpool, out_dim		
 			
 			
-			
-			
-			
-			
-			
-			
-			
-			
-	def build_model_middle(self) :
-		with tf.variable_scope(self.scope):
-			# DROPOUT + BATCH NORMALIZATION :
-			self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
-			self.phase = tf.placeholder(tf.bool,name='phase')
-			self.summary_ops.append( tf.summary.scalar('dropout_keep_probability', self.keep_prob) )
-		
-			#Input and visual encoding layers
-			#PLACEHOLDER :
-			if self.useGAZEBO:
-				self.inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
-			else :
-				self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
-			#
-			self.imageIn = tf.reshape(self.inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
-			
-			# CONV LAYER 1 :
-			shape_input = self.imageIn.get_shape().as_list()
-			input_dim1 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-			nbr_filter1 = 32
-			output_dim1 = [ nbr_filter1]
-			relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=self.imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=self.phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
-			rmpc1_do = tf.nn.dropout(relumaxpoolconv1,self.keep_prob)
-		
-			#LAYER STN 1 :
-			#shape_inputstn = rmpc1_do.get_shape().as_list()
-			#shape_inputstn = self.x_tensor.get_shape().as_list()
-			#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-			#layerstn_name = 'stn1'
-			#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( rmpc1_do, inputstn_dim, layerstn_name, self.keep_prob)
-			#h_trans_def1, out_size1, self.thetas1 = self.nn_layer_stn( self.x_tensor, inputstn_dim, layerstn_name, self.keep_prob)
-			#shape_input = h_trans_def1.get_shape().as_list()
-			#input_dim2 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-		
-			# CONV LAYER 2 :
-			nbr_filter2 = 32
-			output_dim2 = [ nbr_filter2]
-			relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=self.phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
-			rmpc2_do = tf.nn.dropout(relumaxpoolconv2,self.keep_prob)
-		
-			#LAYER STN 2 :
-			#shape_inputstn = rmpc2_do.get_shape().as_list()
-			#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-			#layerstn_name = 'stn2'
-			#h_trans_def2, out_size2, self.thetas2 = self.nn_layer_stn( rmpc2_do, inputstn_dim, layerstn_name, self.keep_prob)
-			#shape_input = h_trans_def2.get_shape().as_list()
-			#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-		
-			# CONV LAYER 3 :
-			nbr_filter3 = 32
-			output_dim3 = [ nbr_filter3]
-			relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=self.phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-			rmpc3_do = tf.nn.dropout(relumaxpoolconv3,self.keep_prob)
-		
-			#LAYER STN 3 :
-			#shape_inputstn = rmpc3_do.get_shape().as_list()
-			#inputstn_dim = [-1, shape_inputstn[1], shape_inputstn[2], shape_inputstn[3]]
-			#layerstn_name = 'stn3'
-			#h_trans_def3, out_size3, self.thetas3 = self.nn_layer_stn( rmpc3_do, inputstn_dim, layerstn_name, self.keep_prob)
-			#shape_input = h_trans_def3.get_shape().as_list()
-			#input_dim4 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
-		
-			# CONV LAYER 4 :
-			'''
-			nbr_filter4 = 128
-			output_dim4 = [ nbr_filter4]
-			relumaxpoolconv4, input_dim5 = self.layer_conv2dBNAct(input_tensor=rmpc3_do, input_dim=input_dim4, output_dim=output_dim4, phase=self.phase, layer_name='conv3', act=tf.nn.relu, filter_size=3, stride=1,padding='SAME')
-			rmpc4_do = tf.nn.dropout(relumaxpoolconv4,self.keep_prob)		
-			'''
-			
-			shape_conv = rmpc3_do.get_shape().as_list()
-			shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
-			out1 = 256
-			fc_x_input = tf.reshape( rmpc3_do, shape_fc )
-			hidden1 = self.nn_layerBN(fc_x_input, shape_fc[1], out1, self.phase, 'layer1')
-			dropped1 = tf.nn.dropout(hidden1, self.keep_prob)
-			
-			out2 = 256
-			hidden2 = self.nn_layerBN(dropped1, out1, out2, self.phase,'layer2')
-			dropped2 = tf.nn.dropout(hidden2, self.keep_prob)
-			
-			self.y = self.nn_layer(dropped2, out2, self.nbrOutput, 'layerOutput', act=tf.identity)	
-			
-			
+				
 			
 			
 	
@@ -610,12 +532,19 @@ class AC_Network():
 			else :
 				inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
-			
-		policy = self.build_actor(inputs, keep_prob, phase, scope+'/actor')
-		Vvalue, Qvalue, actions = self.build_critic(inputs, keep_prob, phase, scope+'/critic') 
+			#PLACEHOLDER :
+			if self.useGAZEBO and self.strongCoupling :
+				cmd = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='cmd')
+			else :
+				cmd = None
+			#
+		policy = self.build_actor(inputs, cmd, keep_prob, phase, scope+'/actor')
+		Vvalue, Qvalue, actions = self.build_critic(inputs, cmd, keep_prob, phase, scope+'/critic') 
 		#TODO : handled the rec placeholder and others...
 		
-		return inputs, actions, policy, Vvalue, Qvalue, keep_prob, phase
+		return inputs, actions, cmd, policy, Vvalue, Qvalue, keep_prob, phase
+	
+	
 		
 	def create_convnet(self, inputs, scope, keep_prob, phase) :
 		with tf.variable_scope(scope):
@@ -699,7 +628,7 @@ class AC_Network():
 			
 			
 	
-	def build_actor(self, inputs, keep_prob, phase, scope) :
+	def build_actor(self, inputs, cmd, keep_prob, phase, scope) :
 		convnet = self.create_convnet( inputs, scope, keep_prob, phase)
 		
 		with tf.variable_scope(scope):
@@ -722,6 +651,12 @@ class AC_Network():
 			yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
 			
 			hidden = yactor
+			
+			if self.strongCoupling :
+				hidden = tf.concat([ hidden, cmd], axis=1, name='concat-hidden-cmd')
+				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
+				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
+			
 			#Recurrent network for temporal dependencies
 			#CAREFUL :
 			#	- self.state_init
@@ -768,7 +703,7 @@ class AC_Network():
 			return policy
 		
 			
-	def build_critic(self, inputs, keep_prob, phase, scope) :			
+	def build_critic(self, inputs, cmd, keep_prob, phase, scope) :			
 		convnet = self.create_convnet( inputs, scope, keep_prob, phase)
 		
 		with tf.variable_scope(scope):
@@ -792,6 +727,13 @@ class AC_Network():
 			ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			
 			hidden = ycritic
+			
+			if self.strongCoupling :
+				hidden = tf.concat([ hidden, cmd], axis=1, name='concat-hidden-cmd')
+				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'critic_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
+				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
+			
+			
 			#Recurrent network for temporal dependencies
 			#CAREFUL :
 			#	- self.state_init
@@ -858,82 +800,6 @@ class AC_Network():
 		return Vvalue, Qvalue, actions 
 		
 		
-	def build_model(self) :
-		with tf.variable_scope(self.scope):
-			# DROPOUT + BATCH NORMALIZATION :
-			self.keep_prob = tf.placeholder(tf.float32,name='keep_prob')
-			self.phase = tf.placeholder(tf.bool,name='phase')
-			self.summary_ops.append( tf.summary.scalar('dropout_keep_probability', self.keep_prob) )
-		
-			#Input and visual encoding layers
-			#PLACEHOLDER :
-			self.inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
-			#
-			self.imageIn = tf.reshape(self.inputs,shape=[-1,self.imagesize[0],self.imagesize[1],self.imagesize[2]])
-			self.conv1 = slim.conv2d(activation_fn=tf.nn.elu,
-				inputs=self.imageIn,num_outputs=32,
-				kernel_size=[5,5],stride=[3,3],padding='VALID')
-			self.conv2 = slim.conv2d(activation_fn=tf.nn.elu,
-				inputs=self.conv1,num_outputs=32,
-				kernel_size=[5,5],stride=[3,3],padding='VALID')
-			#hidden = slim.fully_connected(slim.flatten(self.conv2), h_size, activation_fn=tf.nn.elu)
-			self.conv3 = slim.conv2d(activation_fn=tf.nn.elu,
-			    inputs=self.conv2,num_outputs=64,
-			    kernel_size=[3,3],stride=[1,1],padding='VALID')
-			hidden = slim.fully_connected(slim.flatten(self.conv3), self.h_size, activation_fn=tf.nn.relu)
-
-			#Recurrent network for temporal dependencies
-			#CAREFUL :
-			#	- self.state_init
-			#	- self.state_in
-			# - self.state_out
-			# PLACEHOLDER :
-			#	- c_in
-			# - h_in
-			
-			if self.rec :
-				lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.h_size,state_is_tuple=True)
-				c_init = np.zeros((1, lstm_cell.state_size.c), np.float32)
-				h_init = np.zeros((1, lstm_cell.state_size.h), np.float32)
-				self.state_init = [c_init, h_init]
-				#PLACEHOLDER :
-				c_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.c])
-				#
-				#PLACEHOLDER :
-				h_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.h])
-				#
-				self.state_in = (c_in, h_in)
-				rnn_in = tf.expand_dims(hidden, [0])
-				step_size = tf.shape(self.imageIn)[:1]
-				state_in = tf.contrib.rnn.LSTMStateTuple(c_in, h_in)
-				lstm_outputs, lstm_state = tf.nn.dynamic_rnn(
-					lstm_cell, rnn_in, initial_state=state_in, sequence_length=step_size,
-					time_major=False)
-				lstm_c, lstm_h = lstm_state
-				self.state_out = (lstm_c[:1, :], lstm_h[:1, :])
-				rnn_out = tf.reshape(lstm_outputs, [-1, self.h_size])
-			else :
-				rnn_out = hidden
-
-			
-			#Output layers for policy and value estimations
-			self.policy = slim.fully_connected(rnn_out, self.a_size, activation_fn=None, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
-			self.Vvalue = slim.fully_connected(rnn_out,1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)						              
-			#PLACEHOLDER :
-			self.actions = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='actions')
-			#
-			actionadvantage = slim.fully_connected(self.actions, 10*self.a_size,	activation_fn=None, weights_initializer=normalized_columns_initializer(0.001), biases_initializer=None)
-			self.Qvalue = slim.fully_connected(actionadvantage+self.Vvalue,1,activation_fn=None,weights_initializer=normalized_columns_initializer(0.001),biases_initializer=None)
-			#self.Qvalue_policy = slim.fully_connected(self.policy+self.Vvalue,1,activation_fn=None,weights_initializer=normalized_columns_initializer(0.01),biases_initializer=None)
-			#print(self.value.get_shape().as_list())
-			
-			
-			
-			
-			
-			
-			
-			
 			
 			
 			
@@ -1026,31 +892,61 @@ class AC_Network():
 			
 			
 			
-	def predict_actor(self, sess, inputs, phase=False) :
-		feed_dict = {self.inputs:inputs,
+	def predict_actor(self, sess, inputs, cmd=None, phase=False) :
+		if cmd is None :
+			feed_dict = {self.inputs:inputs,
+			self.keep_prob:1.0,
+			self.phase:phase
+			}
+		else :
+			feed_dict = {self.inputs:inputs,
+			self.cmd:cmd,
 			self.keep_prob:1.0,
 			self.phase:phase
 			}
 		return sess.run( [self.policy], feed_dict=feed_dict)[0]
 		
-	def predict_critic(self, sess, inputs, actions, phase=False) :
-		feed_dict = {self.inputs:inputs,
+	def predict_critic(self, sess, inputs, actions, cmd=None, phase=False) :
+		if cmd is None :
+			feed_dict = {self.inputs:inputs,
 			self.actions:actions,
+			self.keep_prob:1.0,
+			self.phase:phase
+			}
+		else :
+			feed_dict = {self.inputs:inputs,
+			self.actions:actions,
+			self.cmd:cmd,
 			self.keep_prob:1.0,
 			self.phase:phase
 			}
 		return sess.run( [self.Qvalue], feed_dict=feed_dict)[0]
 		
-	def predict_actor_target(self, sess, inputs, phase=False) :
-		feed_dict = {self.t_inputs:inputs,
+	def predict_actor_target(self, sess, inputs, cmd=None, phase=False) :
+		if cmd is None :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_keep_prob:1.0,
+			self.t_phase:phase
+			}
+		else :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_cmd:cmd,
 			self.t_keep_prob:1.0,
 			self.t_phase:phase
 			}
 		return sess.run( [self.t_policy], feed_dict=feed_dict)[0]
 		
-	def predict_critic_target(self, sess, inputs, actions, phase=False) :
-		feed_dict = {self.t_inputs:inputs,
+	def predict_critic_target(self, sess, inputs, actions, cmd=None, phase=False) :
+		if cmd is None :
+			feed_dict = {self.t_inputs:inputs,
 			self.t_actions:actions,
+			self.t_keep_prob:1.0,
+			self.t_phase:phase
+			}
+		else :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_actions:actions,
+			self.t_cmd:cmd,
 			self.t_keep_prob:1.0,
 			self.t_phase:phase
 			}
@@ -1082,13 +978,16 @@ class AC_Network():
 
 
 class Worker():
-	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1e-2, nbrStepPerReplay=15, useGAZEBO=True, fromState=True):
+	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1e-2, nbrStepPerReplay=15, useGAZEBO=True, fromState=True, coupledSystem=True, strongCoupling=True):
 		self.useGAZEBO = useGAZEBO
 		self.fromState = fromState
+		self.coupledSystem = coupledSystem
+		self.strongCoupling = strongCoupling
+		
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
 		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e0)}
-		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=self.useGAZEBO, fromState=self.fromState)
+		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=self.useGAZEBO, fromState=self.fromState, strongCoupling=self.strongCoupling)
 		self.number = name        
 		self.model_path = model_path
 		self.global_episodes = global_episodes
@@ -1133,6 +1032,11 @@ class Worker():
 		terminate = np.vstack(rollout[:,4]) #np.reshape(rollout[:,4],newshape=(-1,1) )
 		batch_size = rollout.shape[0]
 		
+		if self.coupledSystem :
+			cmd = np.vstack( rollout[:,6] )
+			next_cmd = np.vstack( rollout[:,7] )
+			
+		
 		self.target_qvalue_num = []
 		for k in range(batch_size):
 			#self.target_qvalue_num.append(rewards[k,0] + gamma * bootstrap_value[k,0])
@@ -1155,9 +1059,17 @@ class Worker():
 				self.local_AC.phase:True}
 		else :
 			# TRAIN CRITIC :
-			feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
+			if self.strongCoupling == False :
+				feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
 				self.local_network.inputs:vobs,
 				self.local_network.actions:actions,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:True}
+			else :
+				feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
+				self.local_network.inputs:vobs,
+				self.local_network.actions:actions,
+				self.local_network.cmd:cmd,
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True}
 		
@@ -1167,12 +1079,25 @@ class Worker():
 				feed_dict=feed_dict)
 			
 			#CREATE VALUES :
-			a_out = self.local_network.predict_actor(sess, vobs,phase=True)
-			feed_dict = {self.local_network.inputs:vobs,
+			if self.strongCoupling == False :
+				a_out = self.local_network.predict_actor(sess, vobs,phase=True)
+			else :
+				a_out = self.local_network.predict_actor(sess, vobs, cmd, phase=True)
+			
+			if self.strongCoupling == False :
+				feed_dict = {self.local_network.inputs:vobs,
 				self.local_network.actions:a_out,
 				self.local_network.target_qvalue:self.target_qvalue_num,
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:False}
+			else :
+				feed_dict = {self.local_network.inputs:vobs,
+				self.local_network.actions:a_out,
+				self.local_network.cmd:cmd,
+				self.local_network.target_qvalue:self.target_qvalue_num,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:False}
+			
 			critic_gradients_action, c_g_n = sess.run([self.local_network.critic_gradients_action_op, self.local_network.critic_grad_norms],
 				feed_dict = feed_dict)
 				#/batch_size
@@ -1190,9 +1115,18 @@ class Worker():
 				self.local_network.apply_grads['actor']],
 				feed_dict=feed_dict)	
 			'''
-			feed_dict = {self.local_network.actions:actions,
+			if self.strongCoupling == False :
+				feed_dict = {self.local_network.actions:actions,
 				self.local_network.target_qvalue:self.target_qvalue_num,
 				self.local_network.inputs:vobs,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:True,
+				self.local_network.critic_gradients_action:critic_gradients_action[0]}
+			else :
+				feed_dict = {self.local_network.actions:actions,
+				self.local_network.target_qvalue:self.target_qvalue_num,
+				self.local_network.inputs:vobs,
+				self.local_network.cmd:cmd,
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True,
 				self.local_network.critic_gradients_action:critic_gradients_action[0]}
@@ -1260,7 +1194,10 @@ class Worker():
 							s = self.env.reset()
 							if self.number == 0 :
 								rospy.loginfo('ENVIRONMENT RESETTED !')
-							s,dr,ddone,_ = envstep(self.env,dummy_action, self.fromState)
+							obs,dr,ddone,_ = envstep(self.env,dummy_action, self.fromState)
+							if self.coupledSystem :
+								s = obs[0]
+								cmd = obs[1]
 							if self.fromState==False :
 								s = preprocess(s, img_size[0], img_size[1] )
 						
@@ -1337,11 +1274,18 @@ class Worker():
 							a[0] += a_noise
 							'''
 							
-							#if self.number == 0 :
-							#	rospy.loginfo('state : {} ; policy : {} ; noise : {}'.format(s, a_backup,a_noise) )
+							if self.coupledSystem :
+								for i in range(a_size) :
+									a[0,i] += cmd[i]
+							
+							if self.number == 0 :
+								rospy.loginfo('state : {} ; policy : {} ; cmd : {} ; noise : {}'.format(s, a_backup, cmd, a_noise) )
 
 							if self.useGAZEBO :
-								s1, r, d, _ = envstep(self.env, a[0], self.fromState)
+								obs1, r, d, _ = envstep(self.env, a[0], self.fromState)
+								if self.coupledSystem :
+									s1 = obs1[0]
+									cmd1 = obs1[1]
 							else :
 								s1, r, d, _ = self.env.step(a)
 								if self.number == 0:
@@ -1364,12 +1308,21 @@ class Worker():
 							
 							q = None
 							if self.number == 0 :
-								q = self.master_network.predict_critic(sess,s,a)
+								if self.strongCoupling == False :
+									q = self.master_network.predict_critic(sess,s,a)
+								else :
+									q = self.master_network.predict_critic(sess,s,a,cmd)
 							else :
-								q = self.local_network.predict_critic(sess,s,a)
+								if self.strongCoupling == False :
+									q = self.local_network.predict_critic(sess,s,a)
+								else :
+									q = self.local_network.predict_critic(sess,s,a,cmd)
 							
 							
-							step = [s,a,r,s1,d,q[0]]
+							if self.coupledSystem == False :
+								step = [s,a,r,s1,d,q[0]]
+							else :
+								step = [s,a,r,s1,d,q[0],cmd,cmd1]
 							episode_buffer.append(step)
 							#self.rBuffer.append(step)
 							
@@ -1378,7 +1331,8 @@ class Worker():
 							
 
 							episode_reward += r
-							s = s1                    
+							s = s1            
+							cmd = cmd1        
 							total_steps += 1
 							episode_step_count += 1
 							
@@ -1389,28 +1343,56 @@ class Worker():
 							if logit > 100 :
 								#NETWORK-RELATED SUMMARIES :
 								if self.number == 0:
-									summary = sess.run(self.master_network.summary_ops, 
-										feed_dict={self.master_network.inputs:s,
+									if self.strongCoupling == False :
+										feed_dict = {self.master_network.inputs:s,
 										self.master_network.actions:a,
 										self.master_network.keep_prob:1.0,
 										self.master_network.phase:False,
 										self.master_network.t_inputs:s,
 										self.master_network.t_actions:a,
 										self.master_network.t_keep_prob:1.0,
-										self.master_network.t_phase:False})
+										self.master_network.t_phase:False}
+									else :
+										feed_dict = {self.master_network.inputs:s,
+										self.master_network.actions:a,
+										self.master_network.cmd:cmd,
+										self.master_network.keep_prob:1.0,
+										self.master_network.phase:False,
+										self.master_network.t_inputs:s,
+										self.master_network.t_actions:a,
+										self.master_network.t_cmd:cmd,
+										self.master_network.t_keep_prob:1.0,
+										self.master_network.t_phase:False}
+									
+									summary = sess.run(self.master_network.summary_ops, 
+										feed_dict=feed_dict)
 									self.test_summary_writer.add_summary(summary,summary_count)
 									self.test_summary_writer.flush()
 									summary_count += 1
 								else :
-									summary = sess.run(self.local_network.summary_ops, 
-										feed_dict={self.local_network.inputs:s,
+									if self.strongCoupling == False :
+										feed_dict = {self.local_network.inputs:s,
 										self.local_network.actions:a,
 										self.local_network.keep_prob:1.0,
 										self.local_network.phase:False,
 										self.local_network.t_inputs:s,
 										self.local_network.t_actions:a,
 										self.local_network.t_keep_prob:1.0,
-										self.local_network.t_phase:False})
+										self.local_network.t_phase:False}
+									else :
+										feed_dict = {self.local_network.inputs:s,
+										self.local_network.actions:a,
+										self.local_network.cmd:cmd,
+										self.local_network.keep_prob:1.0,
+										self.local_network.phase:False,
+										self.local_network.t_inputs:s,
+										self.local_network.t_actions:a,
+										self.local_network.t_cmd:cmd,
+										self.local_network.t_keep_prob:1.0,
+										self.local_network.t_phase:False}
+									
+									summary = sess.run(self.local_network.summary_ops, 
+										feed_dict=feed_dict)
 									self.test_summary_writer.add_summary(summary,summary_count)
 									self.test_summary_writer.flush()
 									summary_count += 1
@@ -1495,42 +1477,6 @@ class Worker():
 								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
 								q_loss += np.mean(v_l)
 						
-						# TRAIN ON THIS EPISODE :
-						# THIS IS CORRELATED... might not be good to train on it... we need to keep it off-policy since the action are randomly choosen...
-						'''
-						a1 = None
-						idxSteps = range(episode_step_count)
-						
-						rollout = np.vstack( [ self.rBuffer[-idxS] for idxS in idxSteps ] )
-						
-						s1 = np.vstack(rollout[:,3])
-						# Since we don't know what the true final return is, we "bootstrap" from our current
-						# q value estimation that is done by the target network of the master network on which we apply the gradients...
-						if self.rec :
-							a1 = sess.run(self.local_AC.policy,
-							feed_dict={self.local_AC.inputs:s1,
-							self.local_AC.state_in[0]:rnn_state[0],
-							self.local_AC.state_in[1]:rnn_state[1],
-							self.local_AC.keep_prob:1.0,
-							self.local_AC.phase:False})
-							q1 = sess.run(self.local_AC.Qvalue, 
-							feed_dict={self.local_AC.inputs:s1,
-							self.local_AC.state_in[0]:rnn_state[0],
-							self.local_AC.state_in[1]:rnn_state[1],
-							self.local_AC.actions:a,
-							self.local_AC.keep_prob:1.0,
-							self.local_AC.phase:False})[0,0]
-						else :
-							if self.number == 0 :
-								a1 = self.master_network.predict_actor_target( sess, s1)
-								q1 = self.master_network.predict_critic_target( sess, s1, a1)
-							else :
-								a1 = self.local_network.predict_actor_target( sess, s1)
-								q1 = self.local_network.predict_critic_target( sess, s1, a1)
-						
-						
-						v_l,p_l,a_g_n,c_g_n,v_n = self.train( rollout,sess,gamma,q1)
-						'''
 						#
 						#---------------------------------------------------
 					#END OF IF SELF.NUMBER == 0
@@ -1576,6 +1522,9 @@ class Worker():
 		rollout = np.vstack( [ self.rBuffer[idxS] for idxS in idxSteps ] )
 		
 		s1 = np.vstack(rollout[:,3])
+		if self.strongCoupling :
+			cmd1 = np.vstack(rollout[:,7])
+		
 		# Since we don't know what the true final return is, we "bootstrap" from our current
 		# q value estimation that is done by the target network of the master network on which we apply the gradients...
 		if self.rec :
@@ -1593,13 +1542,17 @@ class Worker():
 			self.local_AC.keep_prob:1.0,
 			self.local_AC.phase:False})[0,0]
 		else :
-			#if self.number != 0 :
-			a1 = self.local_network.predict_actor_target( sess, s1, phase=True)
-			q1 = self.local_network.predict_critic_target( sess, s1, a1, phase=True)
-			#else :
-			#	a1 = self.master_network.predict_actor_target( sess, s1, phase=True)
-			#	q1 = self.master_network.predict_critic_target( sess, s1, a1, phase=True)
-		
+			if self.strongCoupling == False :
+				#if self.number != 0 :
+				a1 = self.local_network.predict_actor_target( sess, s1, phase=True)
+				q1 = self.local_network.predict_critic_target( sess, s1, a1, phase=True)
+				#else :
+				#	a1 = self.master_network.predict_actor_target( sess, s1, phase=True)
+				#	q1 = self.master_network.predict_critic_target( sess, s1, a1, phase=True)
+			else :
+				a1 = self.local_network.predict_actor_target( sess, s1, cmd1, phase=True)
+				q1 = self.local_network.predict_critic_target( sess, s1, a1, cmd1, phase=True)
+				
 		return self.train( rollout,sess,gamma,q1)
 		
 	def plot_qvalues(self, sess) :
@@ -1618,7 +1571,7 @@ with tf.device("/cpu:0"):
 #with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
 	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
-	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState) # Generate global network 
+	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState, strongCoupling=strongCoupling) # Generate global network 
 	workers = []
 	replayBuffer = []
 	
@@ -1640,7 +1593,7 @@ with tf.device("/cpu:0"):
 		else :
 			game = gym.make('Pendulum-v0')
 			#game = gym.make('MountainCarContinuous-v0')
-		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO))
+		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO, fromState, strongCoupling))
 	saver = tf.train.Saver(max_to_keep=5)
 
 with tf.Session() as sess:

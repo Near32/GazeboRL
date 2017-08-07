@@ -234,9 +234,15 @@ class Swarm1GazeboRL(GazeboRL) :
 			launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.launch')
 		else :
 			if self.fromState == False :
-				launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+				if self.coupledSystem == False :
+					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+				else :
+					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.coupledSystem.launch')
 			else :
-				launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.fromState.launch')
+				if self.coupledSystem == False :
+					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.fromState.launch')
+				else :
+					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.coupledSystem.launch')
 		
 		commands['launch'] = launchCom
 		
@@ -324,7 +330,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		# VELOCITY :
 		self.publishers[self.publishersList[0]] = rospy.Publisher( self.publishersList[0], self.commands['pubs'][0], queue_size=10) 
 		self.pub_bools[self.publishersList[0]] = True
-		self.pub_rates[self.publishersList[0]] = rospy.Rate(1)
+		self.pub_rates[self.publishersList[0]] = rospy.Rate(100)
 		#self.pub_threads[self.publishersList[0]] = thread.start_new_thread ( Swarm1GazeboRL.publishVELOCITY, (self,self.continuousActions) )
 		self.pub_threads[self.publishersList[0]] = threading.Thread( target=Swarm1GazeboRL.publishVELOCITY, args=(self,self.continuousActions) )
 		self.pub_threads[self.publishersList[0]].start()
