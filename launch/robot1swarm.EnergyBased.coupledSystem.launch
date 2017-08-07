@@ -65,4 +65,6 @@
 	
 	<node name="StatePublisherRL" pkg="GazeboRL" type="statePublisher.py" args="" respawn="true"/>
 	
+	<node name="ZeroOrderHolderRL" pkg="GazeboRL" type="zero-order-holder.py" args="" respawn="true"/>
+	
 </launch>

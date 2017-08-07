@@ -127,6 +127,7 @@ class GazeboRL :
 			
 		if len(self.observations) :
 			self.observation = self.observations[-1]
+			#rospy.loginfo('DEBUG : envstep : {}'.format(self.observation) )
 			self.observations = []
 		
 		if len(self.rewards) :
@@ -311,7 +312,7 @@ class Swarm1GazeboRL(GazeboRL) :
 			if self.fromState :
 				self.subscribers[self.observationsList[3] ] = rospy.Subscriber( self.observationsList[3], self.commands['subs'][3], self.callbackCONTROLLAW )
 			else :
-				self.subscribers[self.observationsList[2] ] = rospy.Subscriber( self.observationsList[2], self.commands['subs'][3], self.callbackCONTROLLAW )
+				self.subscribers[self.observationsList[2] ] = rospy.Subscriber( self.observationsList[2], self.commands['subs'][2], self.callbackCONTROLLAW )
 		#rospy.loginfo('{} :: {}'.format(self.observationsList[1], self.commands['subs'][1]) )
 		
 		#reward :
@@ -379,8 +380,9 @@ class Swarm1GazeboRL(GazeboRL) :
 		enoughItem = True
 		for topic in self.observationsQueues.keys() :
 			if len(self.observationsQueues[topic]):
-				#rospy.loginfo('DEBUG:'+topic)
-				#rospy.loginfo(self.observationsQueues[topic])
+				#if ('state' in topic) :
+				#	rospy.loginfo('DEBUG:'+topic)
+				#	rospy.loginfo(self.observationsQueues[topic][-1])
 				obsItem = self.observationsQueues[topic][-1]
 				observationItems[topic]=obsItem
 			else :
@@ -488,6 +490,7 @@ class Swarm1GazeboRL(GazeboRL) :
 	
 	def callbackMODELSTATE(self, model_states ) :
 		self.rMutex.acquire()
+		#rospy.loginfo('MODELSTATE_CALLBACK :: {}'.format(model_states) )
 		self.observationsQueues[self.observationsList[2]].append( model_states)
 		
 		self.rMutex.release()
@@ -495,7 +498,7 @@ class Swarm1GazeboRL(GazeboRL) :
 	
 	def callbackCONTROLLAW(self, cmd_vel ) :
 		self.rMutex.acquire()
-		#rospy.loginfo(cmd_vel)
+		#rospy.loginfo('CONTROLLAW CALLBACK :: {}'.format(cmd_vel) )
 		if self.fromState :
 			self.observationsQueues[self.observationsList[3]].append( cmd_vel)
 		else :

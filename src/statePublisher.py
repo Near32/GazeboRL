@@ -236,6 +236,7 @@ while continuer :
 					#rospy.loginfo('robot: {} :: kinetic energy = {}'.format(robots[i]['name'],robots[i]['kinetic_energy'] ) )
 				
 				#let us register the state to publish :	
+				del tr.data[:]
 				tr.data.append(robots[i]['r'])
 				tr.data.append(robots[i]['theta'])
 				tr.data.append(robots[i]['robs'])
@@ -243,8 +244,6 @@ while continuer :
 				#rospy.loginfo('swarm kinetic energy = {}'.format(swarm_kinetic_energy ) )
 				
 			
-			else :
-				tr.data.append( 0.0)
 				
 				
 	if tr is not None :

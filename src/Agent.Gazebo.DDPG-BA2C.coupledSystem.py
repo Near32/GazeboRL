@@ -82,8 +82,18 @@ rec = False
 # In[35]:
 
 a_bound = 1.0
-maxReplayBufferSize = 200000#100000#2500
-max_episode_length = 1200
+if coupledSystem :
+	a_bound = 10.0
+	
+
+if fromState :
+	maxReplayBufferSize = 200000#100000#2500
+	max_episode_length = 2000
+else :
+	maxReplayBufferSize = 2500
+	max_episode_length = 800
+
+
 updateT = 1e-0
 
 #updateTauTarget = 1e-6
@@ -120,12 +130,12 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 3
+num_workers = 1
 threadExploration = False
 
-lr=1e-3
+#lr=3e-4
 #lr=5e-4
-#lr=1e-3
+lr=1e-3
 
 if useGAZEBO :
 	a_size = 2	
@@ -134,6 +144,11 @@ if useGAZEBO :
 		model_path = model_path+'+TheadExploration'
 	if fromState :
 		model_path = model_path+'+FromState'
+	if coupledSystem :
+		model_path = model_path+'+coupledSystem'
+	if strongCoupling :
+		model_path = model_path+'+strongCoupling'
+		
 else :	
 	model_path = './DDPG-BA2C-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
@@ -167,15 +182,17 @@ def envstep(env,action) :
 	
 	if output[0] is not None :
 		for topic in output[0].keys() :
+			#rospy.loginfo(topic)
 			if 'OMNIVIEW' in topic :
 				img = np.array(ros2np(output[0][topic]))
 				outimg = img
-			if 'cmd_vel_controlLaw' in topic :
+			if 'controlLaw' in topic :
 				twist = output[0][topic]
-				outcmd = [twist.linear.x, twist.angular.z]
+				#rospy.loginfo('twist : {}'.format(twist) )
+				outcmd = np.array( [twist.linear.x, twist.angular.z]).reshape((1,2) )
 	else :
 		outimg = np.zeros(shape=img_size)
-		outcmd = None
+		outcmd = np.zeros(shape=(1,a_size))
 	
 	if output[1] is not None :
 		outr = output[1]['/RL/reward'].data
@@ -198,7 +215,8 @@ def envstepstate(env,action) :
 	
 	if output[0] is not None :
 		for topic in output[0].keys() :
-			if 'RL/state' in topic :
+			#rospy.loginfo(topic)
+			if 'state' in topic :
 				#let us collect relevant data :
 				values = output[0][topic]
 				r = values.data[0]
@@ -207,12 +225,13 @@ def envstepstate(env,action) :
 				thetaobs = values.data[3]
 				#let us fill in the return value :
 				outstate = np.array([r, theta, robs, thetaobs]).reshape((1,s_size/nbrskipframe, nbrskipframe))
-			if 'cmd_vel_controlLaw' in topic :
+			if 'controlLaw' in topic :
 				twist = output[0][topic]
-				outcmd = [twist.linear.x, twist.angular.z]
+				#rospy.loginfo('twist : {}'.format(twist) )
+				outcmd = np.array( [twist.linear.x, twist.angular.z]).reshape( (1,2) )
 	else :
 		outstate = np.zeros(shape=(1,s_size/nbrskipframe,nbrskipframe))
-		outcmd = None
+		outcmd = np.zeros(shape=(1,a_size))
 	
 	if output[1] is not None :
 		outr = output[1]['/RL/reward'].data
@@ -1155,8 +1174,10 @@ class Worker():
 		total_steps = 0
 		logit = 0
 		reward_scaler = 1.0
-		a_noise = 0.0
 		dummy_action = np.zeros(a_size)
+		a_noise = dummy_action
+		a_backup =dummy_action
+		
 		print ("Starting worker " + str(self.number))
 		make_gif_log = False
 		with sess.as_default(), sess.graph.as_default():                 
@@ -1214,8 +1235,6 @@ class Worker():
 						time_log_print = 50
 						time_mean = 0.0
 						
-						
-						
 						# START EPISODE :
 						#
 						#
@@ -1242,11 +1261,17 @@ class Worker():
 									self.local_AC.phase:False})
 							else :
 								if self.number == 0 :
-									a = self.master_network.predict_actor(sess, s)
+									if self.strongCoupling == False :
+										a = self.master_network.predict_actor(sess, s)
+									else :
+										a = self.master_network.predict_actor(sess, s, cmd)
 								else :
-									a = self.local_network.predict_actor(sess, s)
+									if self.strongCoupling == False :
+										a = self.local_network.predict_actor(sess, s)
+									else :
+										a = self.local_network.predict_actor(sess, s, cmd)
 								
-								
+							
 							#EXPLORATION NOISE :
 							'''
 							eps_greedy_prob = 0.4/(1+episode_count/10)
@@ -1276,10 +1301,10 @@ class Worker():
 							
 							if self.coupledSystem :
 								for i in range(a_size) :
-									a[0,i] += cmd[i]
+									a[0,i] += cmd[0,i]
 							
-							if self.number == 0 :
-								rospy.loginfo('state : {} ; policy : {} ; cmd : {} ; noise : {}'.format(s, a_backup, cmd, a_noise) )
+							#if self.number == 0 :
+							#	rospy.loginfo('state : {} ; policy : {} ; cmd : {} ; noise : {}'.format(s, a_backup, cmd, a_noise) )
 
 							if self.useGAZEBO :
 								obs1, r, d, _ = envstep(self.env, a[0], self.fromState)

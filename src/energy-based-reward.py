@@ -69,7 +69,7 @@ def h1(kr, rdd, rd) :
 def h2(kr, rt, robs, thetaobs) :
 	tobs_f = thetaobs
 	#denum = np.log( 1.0+kr*np.abs(rt-robs)+1e-3)
-	denum = np.log( 1.0+kr*np.maximum( 0.0,robs-rt )+1e-3)
+	denum = np.log( 1.0+kr*np.maximum( 0.0,robs-0.75*rt )+1e-3)
 	
 	if tobs_f >= 0.0 :
 		return 1.0/denum

@@ -43,7 +43,7 @@ while continuer :
 	if len(buffstate) :
 		tstate = buffstate[-1]
 		del buffstate[:]
-		tr = tsate			
+		tr = tstate			
 				
 	if tr is not None :
 		pubR.publish(tr)
