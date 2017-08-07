@@ -63,7 +63,7 @@
 	
 	<node name="EnergyEquilibriumBasedReward" pkg="GazeboRL" type="energy+equilibrium-based-reward.py" args="-r 2.0" respawn="true"/>
 	
-	<node name="StatePublisherRL" pkg="GazeboRL" type="statePublisher.py" args="" respawn="true"/>
+	<node name="StatePublisherRL" pkg="GazeboRL" type="statePublisher.v1.py" args="" respawn="true"/>
 	
 	<node name="ZeroOrderHolderRL" pkg="GazeboRL" type="zero-order-holder.py" args="" respawn="true"/>
 	

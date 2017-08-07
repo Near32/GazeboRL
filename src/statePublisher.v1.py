@@ -7,10 +7,10 @@ import time
 
 from gazebo_msgs.msg import ModelStates
 from geometry_msgs.msg import Pose, Twist
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64MultiArray
 import argparse
 
-parser = argparse.ArgumentParser(description="Energy-based Reward node for RL framework.")
+parser = argparse.ArgumentParser(description="State Publisher node for RL framework.")
 parser.add_argument('-r', help='radius distance from the target.', dest='radius', type=float, default=2.0)
 parser.add_argument('-Omega', help='natural frequency of the oscillators.', dest='Omega', type=float,	default=2.0)
 parser.add_argument('-tDA', help='threshold distance to account for obstacles.', dest='thresholdDistAccount', type=float, default=0.6)
@@ -35,21 +35,19 @@ continuer = True
 def shuttingdown() :
 	continuer = False
 
-rospy.init_node('EnergyBasedReward_node', anonymous=False)
+rospy.init_node('StatePublisher_node', anonymous=False)
 rospy.on_shutdown(shuttingdown)
 
 subState = rospy.Subscriber( '/gazebo/model_states', ModelStates, callbackState )
-pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
+pubR = rospy.Publisher('/RL/state',Float64MultiArray,queue_size=10)
 
 freq = 100
 dt = 1.0/freq
 rate = rospy.Rate(freq)
 
 tstate = None
-tr = Float64()
-tr.data = 0.0
+tr = Float64MultiArray()
 maxvalue = 10.0
-beta = 1.0
 
 
 def f(a,r,rd) :
@@ -70,7 +68,7 @@ def h1(kr, rdd, rd) :
 def h2(kr, rt, robs, thetaobs) :
 	tobs_f = thetaobs
 	#denum = np.log( 1.0+kr*np.abs(rt-robs)+1e-3)
-	denum = np.log( 1.0+kr*np.maximum( 0.0,robs-0.75*rt )+1e-3)
+	denum = np.log( 1.0+kr*np.maximum( 0.0,robs-rt )+1e-3)
 	
 	if tobs_f >= 0.0 :
 		return 1.0/denum
@@ -95,8 +93,7 @@ def controlLaw(kv,kw,a,r,rd,theta,om,eps,psi) :
 	
 	
 rd = dict()
-rewards = dict()
-			
+
 while continuer :
 	
 	if len(buffstate) :
@@ -112,6 +109,17 @@ while continuer :
 		target = None
 		obstacles = list()
 		
+		#take care of the target first :
+		for (name,pose,twist) in zip(tstate.name,tstate.pose,tstate.twist) :
+			if 'target' in name :
+				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
+				q = np.array([ pose.orientation.x , pose.orientation.y, pose.orientation.z, pose.orientation.w ])
+				tl = np.array([ twist.linear.x , twist.linear.y, twist.linear.z ])
+				ta = np.array([ twist.angular.x , twist.angular.y, twist.angular.z ])
+				
+				target = (p, q, tl, ta)
+		
+		# now we have everything to compute for the robots :
 		for (name,pose,twist) in zip(tstate.name,tstate.pose,tstate.twist) :
 			if 'robot' in name :
 				#then we can count one more robot :
@@ -131,19 +139,20 @@ while continuer :
 					pose.orientation.w)
 				euler = tf.transformations.euler_from_quaternion(quaternion)
 				
+				#backup computation... :
 				phi = np.arctan2( p[1], p[0] )
 				r = np.sqrt( p[0]**2+p[1]**2)
 				theta = euler[2] - phi
 				
-				robots.append( {'name' : name, 'rd' : rd[name], 'phi' : phi, 'r': r, 'theta' : theta, 'position' : p , 'euler' : euler, 'linear_vel' : tl, 'angular_vel' : ta} )
-			
-			if 'target' in name :
-				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
-				q = np.array([ pose.orientation.x , pose.orientation.y, pose.orientation.z, pose.orientation.w ])
-				tl = np.array([ twist.linear.x , twist.linear.y, twist.linear.z ])
-				ta = np.array([ twist.angular.x , twist.angular.y, twist.angular.z ])
+				# real computation ...
+				if target is not None :
+					ptarget = p-target[0]
+					phi = np.arctan2( ptarget[1], ptarget[0] )
+					r = np.sqrt( ptarget[0]**2+ptarget[1]**2)
+					theta = euler[2] - phi
+					
 				
-				target = (p, q, tl, ta)
+				robots.append( {'name' : name, 'rd' : rd[name], 'phi' : phi, 'r': r, 'theta' : theta, 'position' : p , 'euler' : euler, 'linear_vel' : tl, 'angular_vel' : ta} )
 				
 			if 'obstacle' in name :
 				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
@@ -160,7 +169,6 @@ while continuer :
 			
 			if nbrRobot >= 1 :
 				swarm_kinetic_energy = 0.0
-				swarm_equilibrium = 0.0
 				#let us ordonate them by values of theta, from min to max :
 				robots = sorted(robots, key=lambda el : el['phi'])
 				for i in range(nbrRobot) :
@@ -209,35 +217,34 @@ while continuer :
 						rd[robots[i]['name']] = 1.0
 					#rospy.loginfo('robot {} :  rd={} :: rddot={}'.format(i, rd[robots[i]['name']], robots[i]['rdd']) )
 						
-				tr.data = 0.0	
+					
 				for i in range(nbrRobot) :
 					cIdx = (i+1)%nbrRobot
 					psi_dot = robots[cIdx]['controlLaw'][0,0]*np.sin( robots[cIdx]['theta'] )/(robots[cIdx]['r']+1e-4) - robots[i]['controlLaw'][1,0]*np.sin( robots[i]['theta'] )/(robots[i]['r']+1e-4)
 					#robots[i]['state_dot'] =  np.reshape( np.array( [ robots[i]['controlLaw'][0,0]*np.cos( robots[i]['theta']) , robots[i]['controlLaw'][1,0] , psi_dot ] ), newshape=(3,1) )
 					robots[i]['state_dot'] =  np.reshape( [ robots[i]['controlLaw'][0,0]*np.cos( robots[i]['theta']) , robots[i]['controlLaw'][1,0] , psi_dot, robots[i]['rdd'] ], newshape=(4,1) )
 					#robots[i]['kinetic_energy'] = 0.5*args.mass* (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 )
-					
-					#robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 + robots[i]['state_dot'][3,0]**2  )
-					robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][3,0]**2  )
-					
-					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']-np.pi/2.0)/(np.pi/2.0))**2
+					robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 + robots[i]['state_dot'][3,0]**2  )
 					
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
-					swarm_equilibrium += robots[i]['equilibrium']
-					
-					rewards[robots[i]['name']] = robots[i]['kinetic_energy']+beta*robots[i]['equilibrium']
-					
-					tr.data += 1.0/(1e-3 + rewards[robots[i]['name']])
 					
 					#rospy.loginfo('robot: {} :: phi={} :: psi={} :: theta={}'.format(robots[i]['name'],robots[i]['phi']*180.0/np.pi,robots[i]['psi']*180.0/np.pi, robots[i]['theta']*180.0/np.pi ) )
 					#rospy.loginfo('robot: {} :: v={} :: w={}'.format(robots[i]['name'],robots[i]['controlLaw'][0],robots[i]['controlLaw'][1] ) )
 					#rospy.loginfo('robot: {} :: {} {} {}'.format(robots[i]['name'],robots[i]['state_dot'][0],robots[i]['state_dot'][1], robots[i]['state_dot'][2] ) )
 					#rospy.loginfo(robots[i]['state_dot'])
 					#rospy.loginfo('robot: {} :: kinetic energy = {}'.format(robots[i]['name'],robots[i]['kinetic_energy'] ) )
+				
+				#let us register the state to publish :	
+				del tr.data[:]
+				tr.data.append(robots[i]['r'])
+				tr.data.append(robots[i]['theta'])
+				tr.data.append(robots[i]['phi'])
+				tr.data.append(robots[i]['robs'])
+				tr.data.append(robots[i]['thetaobs'])
+				#rospy.loginfo('swarm kinetic energy = {}'.format(swarm_kinetic_energy ) )
+				
 			
-			else :
-				tr.data = 0.0
 				
 				
 	if tr is not None :

@@ -61,7 +61,7 @@
 	</include>
 	
 	
-	<node name="EnergyBasedReward" pkg="GazeboRL" type="energy-based-reward.py" args="-r 2.0" respawn="true"/>
+	<node name="EnergyEquilibriumBasedReward" pkg="GazeboRL" type="energy+equilibrium-based-reward.py" args="-r 2.0" respawn="true"/>
 	
 	<node name="StatePublisherRL" pkg="GazeboRL" type="statePublisher.v1.py" args="" respawn="true"/>
 	
