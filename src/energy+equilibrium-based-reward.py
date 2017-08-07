@@ -49,6 +49,7 @@ tstate = None
 tr = Float64()
 tr.data = 0.0
 maxvalue = 10.0
+beta = 1.0
 
 
 def f(a,r,rd) :
@@ -159,6 +160,7 @@ while continuer :
 			
 			if nbrRobot >= 1 :
 				swarm_kinetic_energy = 0.0
+				swarm_equilibrium = 0.0
 				#let us ordonate them by values of theta, from min to max :
 				robots = sorted(robots, key=lambda el : el['phi'])
 				for i in range(nbrRobot) :
@@ -207,7 +209,7 @@ while continuer :
 						rd[robots[i]['name']] = 1.0
 					#rospy.loginfo('robot {} :  rd={} :: rddot={}'.format(i, rd[robots[i]['name']], robots[i]['rdd']) )
 						
-					
+				tr.data = 0.0	
 				for i in range(nbrRobot) :
 					cIdx = (i+1)%nbrRobot
 					psi_dot = robots[cIdx]['controlLaw'][0,0]*np.sin( robots[cIdx]['theta'] )/(robots[cIdx]['r']+1e-4) - robots[i]['controlLaw'][1,0]*np.sin( robots[i]['theta'] )/(robots[i]['r']+1e-4)
@@ -218,19 +220,21 @@ while continuer :
 					#robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 + robots[i]['state_dot'][3,0]**2  )
 					robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][3,0]**2  )
 					
+					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']-np.pi/2.0)/(np.pi/2.0))**2
+					
+					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
-					rewards[robots[i]['name']] = robots[i]['kinetic_energy']
+					swarm_equilibrium += robots[i]['equilibrium']
+					
+					rewards[robots[i]['name']] = robots[i]['kinetic_energy']+beta*robots[i]['equilibrium']
+					
+					tr.data += 1.0/(1e-2 + rewards[robots[i]['name']])
 					
 					#rospy.loginfo('robot: {} :: phi={} :: psi={} :: theta={}'.format(robots[i]['name'],robots[i]['phi']*180.0/np.pi,robots[i]['psi']*180.0/np.pi, robots[i]['theta']*180.0/np.pi ) )
 					#rospy.loginfo('robot: {} :: v={} :: w={}'.format(robots[i]['name'],robots[i]['controlLaw'][0],robots[i]['controlLaw'][1] ) )
 					#rospy.loginfo('robot: {} :: {} {} {}'.format(robots[i]['name'],robots[i]['state_dot'][0],robots[i]['state_dot'][1], robots[i]['state_dot'][2] ) )
 					#rospy.loginfo(robots[i]['state_dot'])
 					#rospy.loginfo('robot: {} :: kinetic energy = {}'.format(robots[i]['name'],robots[i]['kinetic_energy'] ) )
-				
-				#let us compute the rewards to publish :	
-				tr.data = -1.0 * swarm_kinetic_energy
-				#rospy.loginfo('swarm kinetic energy = {}'.format(swarm_kinetic_energy ) )
-				
 			
 			else :
 				tr.data = 0.0

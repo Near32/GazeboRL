@@ -3,13 +3,16 @@
 ## TODO : implement the target network trick ?
 useGAZEBO = True
 fromState = True
-coupledSystem = True
-strongCoupling = True
+coupledSystem = False
+strongCoupling = False
+
+freqSkipFrame = 240
+
 
 show = False
 load_model = False
 energy_based = True
-base_port = 11335
+base_port = 11344
 reward_bound = 1e1
 
 import threading
@@ -67,7 +70,7 @@ if useGAZEBO :
 	#img_size = (180,320,3)
 	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
-	nbrskipframe = 1
+	nbrskipframe = 4
 	#img_size = (120,160,nbrskipframe)
 	img_size = (120,120,nbrskipframe)
 	if fromState :
@@ -81,7 +84,7 @@ else :
 rec = False
 # In[35]:
 
-a_bound = 1.0
+a_bound = 4.0
 if coupledSystem :
 	a_bound = 10.0
 	
@@ -133,9 +136,9 @@ eps_greedy_prob = 0.3
 num_workers = 1
 threadExploration = False
 
-#lr=3e-4
+lr=3e-4
 #lr=5e-4
-lr=1e-3
+#lr=1e-3
 
 if useGAZEBO :
 	a_size = 2	
@@ -143,7 +146,7 @@ if useGAZEBO :
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
 	if fromState :
-		model_path = model_path+'+FromState'
+		model_path = './FromState/'+model_path
 	if coupledSystem :
 		model_path = model_path+'+coupledSystem'
 	if strongCoupling :
@@ -173,23 +176,28 @@ def preprocess(image, imghr=60, imgwr=320) :
 	return image.reshape((1,-1,1))
 	
 def envstep(env,action) :
-	output = env.step(action)
 	outimg = None
 	outcmd = None
 	outr = None
 	outdone = False
 	outinfo = None
 	
+	output = env.step(action)
+	while output[0] is None :
+		output = env.step(action)
+	
 	if output[0] is not None :
 		for topic in output[0].keys() :
 			#rospy.loginfo(topic)
 			if 'OMNIVIEW' in topic :
 				img = np.array(ros2np(output[0][topic]))
-				outimg = img
+				shape = img.shape
+				outimg = img.reshape( (shape[0],shape[1],shape[2], 1) )
+				
 			if 'controlLaw' in topic :
 				twist = output[0][topic]
 				#rospy.loginfo('twist : {}'.format(twist) )
-				outcmd = np.array( [twist.linear.x, twist.angular.z]).reshape((1,2) )
+				outcmd = np.array( [twist.linear.x, twist.angular.z]).reshape((1,2,1) )
 	else :
 		outimg = np.zeros(shape=img_size)
 		outcmd = np.zeros(shape=(1,a_size))
@@ -206,12 +214,16 @@ def envstep(env,action) :
 	return (outimg, outcmd), outr, outdone, outinfo
 	
 def envstepstate(env,action) :
-	output = env.step(action)
 	outstate = None
 	outcmd = None
 	outr = None
 	outdone = False
 	outinfo = None
+	
+	output = env.step(action)
+	while output[0] is None :
+		output = env.step(action)
+	
 	
 	if output[0] is not None :
 		for topic in output[0].keys() :
@@ -224,13 +236,13 @@ def envstepstate(env,action) :
 				robs = values.data[2]
 				thetaobs = values.data[3]
 				#let us fill in the return value :
-				outstate = np.array([r, theta, robs, thetaobs]).reshape((1,s_size/nbrskipframe, nbrskipframe))
+				outstate = np.array([r, theta, robs, thetaobs]).reshape((1,s_size/nbrskipframe, 1))
 			if 'controlLaw' in topic :
 				twist = output[0][topic]
 				#rospy.loginfo('twist : {}'.format(twist) )
-				outcmd = np.array( [twist.linear.x, twist.angular.z]).reshape( (1,2) )
+				outcmd = np.array( [twist.linear.x, twist.angular.z]).reshape( (1,2,1) )
 	else :
-		outstate = np.zeros(shape=(1,s_size/nbrskipframe,nbrskipframe))
+		outstate = np.zeros(shape=(1,s_size/nbrskipframe,1))
 		outcmd = np.zeros(shape=(1,a_size))
 	
 	if output[1] is not None :
@@ -246,11 +258,35 @@ def envstepstate(env,action) :
 	
 	
 def envstep(env,action,fromState) :
-	if fromState == False :
-		return envstep(env,action)
+	outputs = list()
+	looprate = rospy.Rate(freqSkipFrame)
+	
+	for i in range(nbrskipframe) :
+		if fromState == False :
+			outputs.append( envstep(env,action) )
+		else :
+		 	outputs.append( envstepstate(env,action) )
+		looprate.sleep()
+	
+	#for el in outputs :
+	#	rospy.loginfo(el)
+	#rospy.loginfo('--------------')
+		
+	if fromState :
+		obs = np.concatenate( [ outputs[i][0][0] for i in range(nbrskipframe) ], axis=2 )
 	else :
-		return envstepstate(env,action)	
-
+		obs = np.concatenate( [ outputs[i][0][0] for i in range(nbrskipframe) ], axis=3 )
+	#rospy.loginfo('OBS : {}'.format(obs.shape) )
+	if outputs[0][0][1] is not None :
+		cmd = np.concatenate( [ outputs[i][0][1] for i in range(nbrskipframe) ], axis=2 )
+	else :
+		cmd = None
+	
+	outr = np.mean( [ outputs[i][1] for i in range(nbrskipframe) ] )
+	outdone = outputs[-1][2]
+	outinfo = outputs[-1][3]
+	
+	return (obs,cmd), outr, outdone, outinfo
 
 
 import sys, traceback,logging
@@ -547,7 +583,9 @@ class AC_Network():
 			if self.useGAZEBO :
 				inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1],self.imagesize[2]],dtype=tf.float32,name='inputs')
 				if self.fromState :
-					inputs = tf.placeholder(shape=[None,self.s_size/self.nbrskipframe, self.nbrskipframe],dtype=tf.float32,name='inputs')
+					inputs = tf.placeholder(shape=[None,self.imagesize[0]*self.imagesize[1], self.nbrskipframe],dtype=tf.float32,name='inputs')
+					shape = inputs.get_shape().as_list()
+					print('inputs : batch x {} x {}'.format(shape[1],shape[2]) )
 			else :
 				inputs = tf.placeholder(shape=[None,self.s_size],dtype=tf.float32,name='inputs')
 			#
@@ -637,7 +675,7 @@ class AC_Network():
 					fc_x_input = tf.reshape( rmpc3_do, shape_fc )
 					convnet = fc_x_input
 				else :
-					convnet = tf.reshape(inputs,shape=[-1,self.s_size])
+					convnet = tf.reshape(inputs,shape=(-1,self.s_size))
 			else :
 				convnet = inputs
 				
@@ -671,7 +709,7 @@ class AC_Network():
 			
 			hidden = yactor
 			
-			if self.strongCoupling :
+			if cmd is not None :
 				hidden = tf.concat([ hidden, cmd], axis=1, name='concat-hidden-cmd')
 				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
@@ -747,7 +785,7 @@ class AC_Network():
 			
 			hidden = ycritic
 			
-			if self.strongCoupling :
+			if cmd is not None :
 				hidden = tf.concat([ hidden, cmd], axis=1, name='concat-hidden-cmd')
 				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'critic_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
@@ -1216,9 +1254,8 @@ class Worker():
 							if self.number == 0 :
 								rospy.loginfo('ENVIRONMENT RESETTED !')
 							obs,dr,ddone,_ = envstep(self.env,dummy_action, self.fromState)
-							if self.coupledSystem :
-								s = obs[0]
-								cmd = obs[1]
+							s = obs[0]
+							cmd = obs[1]
 							if self.fromState==False :
 								s = preprocess(s, img_size[0], img_size[1] )
 						
@@ -1299,23 +1336,28 @@ class Worker():
 							a[0] += a_noise
 							'''
 							
+							
 							if self.coupledSystem :
+								if cmd is None:
+									cmd = np.zeros((1,a_size))
+									
 								for i in range(a_size) :
 									a[0,i] += cmd[0,i]
+							
 							
 							#if self.number == 0 :
 							#	rospy.loginfo('state : {} ; policy : {} ; cmd : {} ; noise : {}'.format(s, a_backup, cmd, a_noise) )
 
 							if self.useGAZEBO :
 								obs1, r, d, _ = envstep(self.env, a[0], self.fromState)
-								if self.coupledSystem :
-									s1 = obs1[0]
-									cmd1 = obs1[1]
+								s1 = obs1[0]
+								cmd1 = obs1[1]
 							else :
 								s1, r, d, _ = self.env.step(a)
 								if self.number == 0:
 									self.env.render()
 
+							
 							#episode_frames.append(s1)
 							
 							if self.useGAZEBO :
@@ -1618,7 +1660,7 @@ with tf.device("/cpu:0"):
 		else :
 			game = gym.make('Pendulum-v0')
 			#game = gym.make('MountainCarContinuous-v0')
-		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO, fromState, strongCoupling))
+		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO=useGAZEBO, fromState=fromState, coupledSystem=coupledSystem, strongCoupling=strongCoupling))
 	saver = tf.train.Saver(max_to_keep=5)
 
 with tf.Session() as sess:

@@ -10,7 +10,7 @@ NLonly = True
 show = False
 load_model = False
 energy_based = True
-base_port = 11345
+base_port = 11340
 reward_bound = 1e1
 
 import threading
@@ -112,7 +112,7 @@ updateTauTarget = 1e-3
 if useGAZEBO :
 	nbrStepsPerReplay = 4#32
 	if fromState :
-		nbrStepsPerReplay = 32
+		nbrStepsPerReplay = 16
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -1309,9 +1309,7 @@ class Worker():
 									else :
 										a[0,i] = cmd[0,i]
 							
-							#if self.number == 0 :
-							#	rospy.loginfo('state : {} ; policy : {} ; cmd : {} ; noise : {}'.format(s, a_backup, cmd, a_noise) )
-
+							
 							if self.useGAZEBO :
 								obs1, r, d, _ = envstep(self.env, a[0], self.fromState)
 								if self.coupledSystem :
@@ -1337,6 +1335,11 @@ class Worker():
 								
 							r /= reward_scaler
 							
+							
+							if self.number == 0 :
+								rospy.loginfo('reward : {} ; policy : {} ; cmd : {} ; noise : {}'.format(r, a_backup, cmd, a_noise) )
+
+
 							q = None
 							if self.number == 0 :
 								if self.strongCoupling == False :

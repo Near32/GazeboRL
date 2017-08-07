@@ -17,6 +17,7 @@ import os
 
 def init_roscore(env,port):
 	subprocess.Popen(['roscore -p '+str(port)+' &'],shell=True,env=env)
+	time.sleep(2)
 
 class GazeboRL :
 	def __init__(self,commands,observationsList=None,publishersList=None, rewardsList=None, env=None):
