@@ -725,7 +725,9 @@ class AC_Network():
 			hidden = yactor
 			
 			if cmd is not None :
-				hidden = tf.concat([ hidden, cmd], axis=1, name='concat-hidden-cmd')
+				shape = cmd.get_shape().as_list()
+				cmd_r = tf.reshape(cmd,shape=(-1,shape[1]*shape[2]))
+				hidden = tf.concat([ hidden, cmd_r], axis=1, name='concat-hidden-cmd')
 				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 			
@@ -801,7 +803,9 @@ class AC_Network():
 			hidden = ycritic
 			
 			if cmd is not None :
-				hidden = tf.concat([ hidden, cmd], axis=1, name='concat-hidden-cmd')
+				shape = cmd.get_shape().as_list()
+				cmd_r = tf.reshape(cmd,shape=(-1,shape[1]*shape[2]))
+				hidden = tf.concat([ hidden, cmd_r], axis=1, name='concat-hidden-cmd')
 				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'critic_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 			
