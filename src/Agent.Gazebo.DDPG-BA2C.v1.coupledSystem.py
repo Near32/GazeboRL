@@ -18,6 +18,7 @@ show = False
 load_model = False
 energy_based = True
 #base_port = 11320
+base_port = 11311
 if NLonly :
 	base_port = 11330 #NLonly
 reward_bound = 1e1
@@ -140,7 +141,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 2
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -605,7 +606,7 @@ class AC_Network():
 			#
 			#PLACEHOLDER :
 			if self.useGAZEBO and self.strongCoupling :
-				cmd = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='cmd')
+				cmd = tf.placeholder(shape=[None,self.a_size,nbrskipframe],dtype=tf.float32,name='cmd')
 			else :
 				cmd = None
 			#
