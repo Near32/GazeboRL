@@ -4,9 +4,9 @@
 useGAZEBO = True
 fromState = True
 equilibriumBased = True
-coupledSystem = False
-strongCoupling = False
-NLonly = True
+coupledSystem = True
+strongCoupling = True
+NLonly = False
 if NLonly :
 	coupledSystem = True
 	
@@ -1350,7 +1350,11 @@ class Worker():
 							a[0] += a_noise
 							'''
 							
+							# SAVE FOR THE RL FRAMEWORK UPDATES :
+							a_out = a
 							
+							# THIS IS NOT PART OF THE RL SYSTEM ...
+							#
 							if self.coupledSystem :
 								if cmd is None:
 									cmd = np.zeros((1,a_size))
@@ -1361,7 +1365,8 @@ class Worker():
 										a[0,i] = cmd[0,i,nbrskipframe-1]
 									else :
 										a[0,i] += cmd[0,i,nbrskipframe-1]
-							
+							#
+							#
 							
 							
 							if self.useGAZEBO :
@@ -1373,7 +1378,13 @@ class Worker():
 								if self.number == 0:
 									self.env.render()
 									
-								
+							#RESTORE FOR THE RL FRAMEWORK :
+							#
+							a = a_out
+							#
+							#	
+							
+							
 							if self.useGAZEBO :
 								if self.fromState==False:
 									s1 = preprocess(s1, img_size[0], img_size[1] )

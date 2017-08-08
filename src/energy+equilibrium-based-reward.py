@@ -112,6 +112,17 @@ while continuer :
 		target = None
 		obstacles = list()
 		
+		#take care of the target first :
+		for (name,pose,twist) in zip(tstate.name,tstate.pose,tstate.twist) :
+			if 'target' in name :
+				p = np.array([ pose.position.x , pose.position.y, pose.position.z ])
+				q = np.array([ pose.orientation.x , pose.orientation.y, pose.orientation.z, pose.orientation.w ])
+				tl = np.array([ twist.linear.x , twist.linear.y, twist.linear.z ])
+				ta = np.array([ twist.angular.x , twist.angular.y, twist.angular.z ])
+				
+				target = (p, q, tl, ta)
+		
+		# now we have everything to compute for the robots :
 		for (name,pose,twist) in zip(tstate.name,tstate.pose,tstate.twist) :
 			if 'robot' in name :
 				#then we can count one more robot :
@@ -131,9 +142,33 @@ while continuer :
 					pose.orientation.w)
 				euler = tf.transformations.euler_from_quaternion(quaternion)
 				
+				#backup computation... :
 				phi = np.arctan2( p[1], p[0] )
 				r = np.sqrt( p[0]**2+p[1]**2)
 				theta = euler[2] - phi
+				
+				# real computation ...
+				if target is not None :
+					ptarget = p-target[0]
+					#phi = np.arctan2( ptarget[1], ptarget[0] )
+					#r = np.sqrt( ptarget[0]**2+ptarget[1]**2)
+					#theta = euler[2] - phi
+					
+					phi = np.arctan2( ptarget[1], ptarget[0] )
+				
+					while phi > np.pi :
+						phi -= 2*np.pi
+					while phi < -np.pi :
+						phi += 2*np.pi
+				
+					r = np.sqrt( ptarget[0]**2+ptarget[1]**2)
+					theta = euler[2] - phi
+				
+					while theta > np.pi :
+						theta -= 2*np.pi
+					while theta < -np.pi :
+						theta += 2*np.pi
+					
 				
 				robots.append( {'name' : name, 'rd' : rd[name], 'phi' : phi, 'r': r, 'theta' : theta, 'position' : p , 'euler' : euler, 'linear_vel' : tl, 'angular_vel' : ta} )
 			
@@ -220,7 +255,7 @@ while continuer :
 					#robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][2,0]**2 + robots[i]['state_dot'][3,0]**2  )
 					robots[i]['kinetic_energy'] = 0.5 * args.mass * (  robots[i]['state_dot'][0,0]**2 + robots[i]['state_dot'][1,0]**2 + robots[i]['state_dot'][3,0]**2  )
 					
-					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']-np.pi/2.0)/(np.pi/2.0))**2
+					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']+np.pi/2.0)/(np.pi/2.0))**2
 					
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']

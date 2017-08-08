@@ -41,7 +41,7 @@ rospy.on_shutdown(shuttingdown)
 subState = rospy.Subscriber( '/gazebo/model_states', ModelStates, callbackState )
 pubR = rospy.Publisher('/RL/state',Float64MultiArray,queue_size=10)
 
-freq = 100
+freq = 1000
 dt = 1.0/freq
 rate = rospy.Rate(freq)
 
@@ -147,10 +147,25 @@ while continuer :
 				# real computation ...
 				if target is not None :
 					ptarget = p-target[0]
+					#phi = np.arctan2( ptarget[1], ptarget[0] )
+					#r = np.sqrt( ptarget[0]**2+ptarget[1]**2)
+					#theta = euler[2] - phi
+					
 					phi = np.arctan2( ptarget[1], ptarget[0] )
+				
+					while phi > np.pi :
+						phi -= 2*np.pi
+					while phi < -np.pi :
+						phi += 2*np.pi
+				
 					r = np.sqrt( ptarget[0]**2+ptarget[1]**2)
 					theta = euler[2] - phi
-					
+				
+					while theta > np.pi :
+						theta -= 2*np.pi
+					while theta < -np.pi :
+						theta += 2*np.pi
+				
 				
 				robots.append( {'name' : name, 'rd' : rd[name], 'phi' : phi, 'r': r, 'theta' : theta, 'position' : p , 'euler' : euler, 'linear_vel' : tl, 'angular_vel' : ta} )
 				
@@ -242,6 +257,7 @@ while continuer :
 				tr.data.append(robots[i]['phi'])
 				tr.data.append(robots[i]['robs'])
 				tr.data.append(robots[i]['thetaobs'])
+				#rospy.loginfo('STATE : r={} : theta={} : phi={} : {} : {}'.format( *(tr.data) ) )
 				#rospy.loginfo('swarm kinetic energy = {}'.format(swarm_kinetic_energy ) )
 				
 			
