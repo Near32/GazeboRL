@@ -1,4 +1,5 @@
 # # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network
+## We wish to guarantee some policy improvements little by little.
 
 ## TODO : implement the target network trick ?
 useGAZEBO = True
@@ -19,7 +20,8 @@ load_model = False
 energy_based = True
 #base_port = 11320
 #base_port = 11311
-base_port = 11411
+#base_port = 11411
+base_port = 11452
 if NLonly :
 	base_port = 11330 #NLonly
 reward_bound = 1e1
@@ -95,7 +97,7 @@ rec = False
 
 a_bound = 1.0
 if coupledSystem :
-	a_bound = 10.0
+	a_bound = 2.0
 	
 
 if fromState :
@@ -123,7 +125,7 @@ updateTauTarget = 1e-3
 if useGAZEBO :
 	nbrStepsPerReplay = 4#32
 	if fromState :
-		nbrStepsPerReplay = 32
+		nbrStepsPerReplay = 64
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -142,14 +144,14 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 2
+num_workers = 8
 if NLonly :
 	num_workers = 1
 threadExploration = False
 
-#lr=1e-4
+lr=1e-4
 #lr=5e-4
-lr=1e-3
+#lr=1e-3
 
 if useGAZEBO :
 	a_size = 2	
@@ -1063,7 +1065,7 @@ class Worker():
 		
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
-		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e0)}
+		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e1)}
 		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=self.useGAZEBO, fromState=self.fromState, strongCoupling=self.strongCoupling)
 		self.number = name        
 		self.model_path = model_path
