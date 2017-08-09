@@ -1000,11 +1000,12 @@ class AC_Network():
 
 
 class Worker():
-	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1e-2, nbrStepPerReplay=15, useGAZEBO=True, fromState=True, coupledSystem=True, strongCoupling=True):
+	def __init__(self,master_network,game,replayBuffer,name, model_path, global_episodes, rec=False, updateT=1e-2, nbrStepPerReplay=15, useGAZEBO=True, fromState=True, coupledSystem=True, strongCoupling=True, NLonly=True):
 		self.useGAZEBO = useGAZEBO
 		self.fromState = fromState
 		self.coupledSystem = coupledSystem
 		self.strongCoupling = strongCoupling
+		self.NLonly = NLonly
 		
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
@@ -1304,7 +1305,7 @@ class Worker():
 							
 							if self.coupledSystem :
 								for i in range(a_size) :
-									if NLonly == False :
+									if self.NLonly == False :
 										a[0,i] += cmd[0,i]
 									else :
 										a[0,i] = cmd[0,i]
@@ -1627,7 +1628,7 @@ with tf.device("/cpu:0"):
 		else :
 			game = gym.make('Pendulum-v0')
 			#game = gym.make('MountainCarContinuous-v0')
-		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO, fromState, strongCoupling))
+		workers.append(Worker(master_network,game,replayBuffer,i,model_path,global_episodes,rec,updateT,nbrStepsPerReplay,useGAZEBO, fromState, strongCoupling, NLonly=NLonly))
 	saver = tf.train.Saver(max_to_keep=5)
 
 with tf.Session() as sess:
