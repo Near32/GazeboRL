@@ -5,6 +5,7 @@ useGAZEBO = False
 
 show = False
 load_model = False
+Noise = False
 
 import threading
 import multiprocessing
@@ -117,7 +118,8 @@ if useGAZEBO :
 	model_path = './DDPG-r1s-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 else :	
-	model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-test-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	#model_path = './DDPG-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
 
@@ -1248,12 +1250,13 @@ class Worker():
 							'''
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
-							scale = self.local_network.a_bound/100.0#10.0
-							theta = 0.15
-							sigma = 0.3
-							a_noise += theta*(0.0-a_noise)+sigma*np.random.normal(loc=0.0,scale=scale)
 							a_backup = a[0]
-							a[0] += a_noise
+							if Noise :
+								scale = self.local_network.a_bound/100.0#10.0
+								theta = 0.15
+								sigma = 0.3
+								a_noise += theta*(0.0-a_noise)+sigma*np.random.normal(loc=0.0,scale=scale)
+								a[0] += a_noise
 							
 							'''
 							a_noise =  (1. / (1. + episode_count))

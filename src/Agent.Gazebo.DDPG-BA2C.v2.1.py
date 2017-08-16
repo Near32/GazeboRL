@@ -2,11 +2,11 @@
 ## We wish to guarantee some policy improvements little by little.
 
 ## TODO : implement the target network trick ?
-useGAZEBO = True
+useGAZEBO = False
 fromState = True
 equilibriumBased = True
-coupledSystem = True
-strongCoupling = True
+coupledSystem = False
+strongCoupling = False
 NLonly = False
 if NLonly :
 	coupledSystem = True
@@ -48,6 +48,8 @@ else :
 import cv2
 import os
 import numpy as np
+from replayBuffer import EXP, PER
+alphaPER = 0.2
 
 
 if useGAZEBO :
@@ -147,7 +149,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 3
+num_workers = 1
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -175,7 +177,7 @@ if useGAZEBO :
 		model_path = './NLonly/'+model_path
 		
 else :	
-	model_path = './DDPG-BA2C-v2-'+'w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alpha)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
 
@@ -1127,6 +1129,7 @@ class Worker():
 		rewards = np.vstack(rollout[:,2]) #np.reshape( rollout[:,2], newshape=(-1,1) )
 		next_observations = np.vstack(rollout[:,3]) #np.reshape( rollout[:,3], newshape=(-1,s_size) )
 		terminate = np.vstack(rollout[:,4]) #np.reshape(rollout[:,4],newshape=(-1,1) )
+		indexes = np.vstack(rollout[:,5])
 		batch_size = rollout.shape[0]
 		
 		if self.coupledSystem :
@@ -1232,7 +1235,13 @@ class Worker():
 				self.local_network.actor_grad_norms,
 				self.local_network.apply_grads['actor']],
 				feed_dict=feed_dict)
-					
+		
+		#UPDATE THE PER :
+		print(v_l.shape)
+		for (idx, new_error) in zip(indexes,v_l[0]) :
+			new_priority = self.rBuffer.priority(new_error)
+			self.rBuffer.update(idx,new_priority)
+			
 		# UPDATE OF THE TARGET NETWORK:
 		#if self.number == 0 :
 		sess.run(self.update_ops_target)
@@ -1444,11 +1453,11 @@ class Worker():
 							
 							
 							if self.coupledSystem == False :
-								step = [s,a,r,s1,d,q[0]]
+								#step = [s,a,r,s1,d,q[0]]
+								step = EXP(s,a,s1,r,d)
 							else :
 								step = [s,a,r,s1,d,q[0],cmd,cmd1]
 							episode_buffer.append(step)
-							#self.rBuffer.append(step)
 							
 							episode_values.append(q[0])
 							actions.append(a[0])
@@ -1528,7 +1537,7 @@ class Worker():
 							
 							# TRAINING :
 							#
-							#if len(self.rBuffer) > self.nbrStepPerReplay:
+							#if self.rBuffer.counter > self.nbrStepPerReplay:
 							#	v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
 							#	q_loss += np.mean(v_l)
 							#
@@ -1574,13 +1583,11 @@ class Worker():
 
 
 						#Let us add this episode_buffer to the replayBuffer :
-						#self.rBuffer.append(episode_buffer)
+						init_priority = self.rBuffer.total()
 						for el in episode_buffer :
-							self.rBuffer.append(el)
+							self.rBuffer.add(el,init_priority)
 						
-						while len(self.rBuffer) > maxReplayBufferSize :
-							del self.rBuffer[0]
-
+						
 						# Periodically save gifs of episodes, model parameters, and summary statistics.
 						if self.number == 0 :
 							if episode_count % 5 == 0 and episode_count != 0:
@@ -1646,9 +1653,12 @@ class Worker():
 
 	def train_on_rBuffer(self,sess) :
 		a1 = None
-		idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
+		prioritysum = self.rBuffer.total()
+		#idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
+		randexp = np.random.random(size=self.nbrStepPerReplay)*prioritysum
+		minibatch = [ self.rBuffer(randexp[i]) for i in range(self.nbrStepPerReplay) ]
 		
-		rollout = np.vstack( [ self.rBuffer[idxS] for idxS in idxSteps ] )
+		rollout = np.vstack( [ [el[2].s, el[2].a, el[2].r, el[2].s1, el[2].done, el[0]] for el in minibatch ] )
 		
 		s1 = np.vstack(rollout[:,3])
 		if self.strongCoupling :
@@ -1683,6 +1693,8 @@ class Worker():
 				q1 = self.local_network.predict_critic_target( sess, s1, a1, cmd1, phase=True)
 				
 		return self.train( rollout,sess,gamma,q1)
+	
+	
 		
 	def plot_qvalues(self, sess) :
 		h = 100
@@ -1697,12 +1709,11 @@ tf.reset_default_graph()
 
 
 with tf.device("/cpu:0"): 
-#with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
 	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
 	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState, strongCoupling=strongCoupling) # Generate global network 
 	workers = []
-	replayBuffer = []
+	replayBuffer = PER(capacity=maxReplayBufferSize,alpha=alphaPER)
 	
 	# Create worker classes
 	for i in range(num_workers):

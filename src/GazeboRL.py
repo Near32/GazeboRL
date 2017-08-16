@@ -138,6 +138,8 @@ class GazeboRL :
 		if len(self.dones) :
 			self.done = self.dones[-1]
 			self.dones = []
+		else :
+			self.done = False
 		
 		if len(self.infos) :
 			self.info = self.infos[-1]
@@ -432,7 +434,7 @@ class Swarm1GazeboRL(GazeboRL) :
 		
 		self.setPause(False)
 		
-		self.randomInitialization()
+		#self.randomInitialization()
 		
 		self.rMutex.release()
 		
