@@ -1,6 +1,6 @@
 import numpy as np
 
-class EXP() :
+class EXP(object) :
 	def __init__(self, s, a, s1, r, done) :
 		self.s = s
 		self.a = a
@@ -15,14 +15,15 @@ class PER() :
 		self.alpha = alpha
 		self.epsilon = 1e-6
 		self.capacity = capacity
-		self.tree = np.zeros(2*self.capacity+1)
-		self.data = np.zeros(self.capacity+1,dtype=object)
+		self.tree = np.zeros(2*self.capacity-1)
+		self.data = np.zeros(self.capacity,dtype=object)
 	
-	def _add(self, exp, priority) :
+	def add(self, exp, priority) :
 		idx = self.counter + self.capacity -1
 		
 		self.data[self.counter] = exp
 		
+		self.counter += 1
 		if self.counter >= self.capacity :
 			self.counter = 0
 		
@@ -32,7 +33,7 @@ class PER() :
 		return (error+self.epsilon)**self.alpha
 			
 	def update(self, idx, priority) :
-		change = self.priority - self.tree[idx]
+		change = priority - self.tree[idx]
 		
 		self.tree[idx] = priority
 		
@@ -50,6 +51,18 @@ class PER() :
 		idx = self._retrieve(0,s)
 		dataidx = idx-self.capacity+1
 		data = self.data[dataidx]
+		priority = self.tree[idx]
+		
+		return (idx, priority, data)
+	
+	def get(self, s) :
+		idx = self._retrieve(0,s)
+		dataidx = idx-self.capacity+1
+		
+		data = self.data[dataidx]
+		if not isinstance(data,EXP) :
+			raise TypeError
+				
 		priority = self.tree[idx]
 		
 		return (idx, priority, data)

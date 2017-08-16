@@ -49,7 +49,7 @@ import cv2
 import os
 import numpy as np
 from replayBuffer import EXP, PER
-alphaPER = 0.2
+alphaPER = 0.7
 
 
 if useGAZEBO :
@@ -149,7 +149,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 1
+num_workers = 8
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -177,7 +177,7 @@ if useGAZEBO :
 		model_path = './NLonly/'+model_path
 		
 else :	
-	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alpha)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
 
@@ -912,7 +912,8 @@ class AC_Network():
 			
 			#Gradients :
 			qreshaped = tf.reshape(self.Qvalue,(-1,1))
-			self.Qvalue_loss = tf.reduce_mean(tf.abs(self.target_qvalue - qreshaped))
+			self.Qvalue_errors = tf.abs(self.target_qvalue - qreshaped)
+			self.Qvalue_loss = tf.reduce_mean(self.Qvalue_errors)
 			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - qreshaped))
 			#self.Qvalue_loss = tf.losses.mean_squared_error(labels=self.target_qvalue,predictions=self.Qvalue)
 			#self.Qvalue_loss = tf.squared_difference(self.target_qvalue,self.Qvalue)
@@ -1173,7 +1174,8 @@ class Worker():
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True}
 		
-			v_l, v_n,_ = sess.run([self.local_network.Qvalue_loss,
+			errors, v_l, v_n,_ = sess.run([self.local_network.Qvalue_errors,
+				self.local_network.Qvalue_loss,
 				self.local_network.var_norms,
 				self.local_network.apply_grads['critic']],
 				feed_dict=feed_dict)
@@ -1237,9 +1239,9 @@ class Worker():
 				feed_dict=feed_dict)
 		
 		#UPDATE THE PER :
-		print(v_l.shape)
-		for (idx, new_error) in zip(indexes,v_l[0]) :
+		for (idx, new_error) in zip(indexes,errors) :
 			new_priority = self.rBuffer.priority(new_error)
+			#print( 'prior = {} / {}'.format(new_priority,self.rBuffer.total()) )
 			self.rBuffer.update(idx,new_priority)
 			
 		# UPDATE OF THE TARGET NETWORK:
@@ -1583,8 +1585,8 @@ class Worker():
 
 
 						#Let us add this episode_buffer to the replayBuffer :
-						init_priority = self.rBuffer.total()
 						for el in episode_buffer :
+							init_priority = self.rBuffer.priority( np.abs(el.r) )
 							self.rBuffer.add(el,init_priority)
 						
 						
@@ -1608,7 +1610,7 @@ class Worker():
 						# TRAINING :
 						#
 						#
-						if len(self.rBuffer) > self.nbrStepPerReplay:
+						if self.rBuffer.counter > self.nbrStepPerReplay:
 							for i in range(self.nbrStepPerReplay) :
 								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
 								q_loss += np.mean(v_l)
@@ -1618,7 +1620,7 @@ class Worker():
 					#END OF IF SELF.NUMBER == 0
 					
 					# Update the network using the experience replay buffer:
-					if len(self.rBuffer) > self.nbrStepPerReplay:
+					if self.rBuffer.counter > self.nbrStepPerReplay:
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)	
 								
 						if self.number == 0 :
@@ -1656,7 +1658,14 @@ class Worker():
 		prioritysum = self.rBuffer.total()
 		#idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
 		randexp = np.random.random(size=self.nbrStepPerReplay)*prioritysum
-		minibatch = [ self.rBuffer(randexp[i]) for i in range(self.nbrStepPerReplay) ]
+		minibatch = list()
+		for i in range(self.nbrStepPerReplay):
+			try :
+				el = self.rBuffer.get(randexp[i])
+				minibatch.append(el)
+			except TypeError as e :
+				continue
+				#print('REPLAY BUFFER EXCEPTION...')
 		
 		rollout = np.vstack( [ [el[2].s, el[2].a, el[2].r, el[2].s1, el[2].done, el[0]] for el in minibatch ] )
 		
