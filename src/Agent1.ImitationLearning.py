@@ -802,7 +802,10 @@ class NN :
 		#y = nn_layer(dropped, 500, 10, 'layer2', act=tf.identity)
 		#y = nn_layer(dropped2, out2, nbrOutput, 'layer3', act=tf.identity)
 		#self.y = self.nn_layerBN(dropped1, out1, self.nbrOutput, self.phase, layer_name='layerOutput', act=tf.identity)	
-		self.y = self.nn_layer(dropped2, out2, self.nbrOutput, 'layerOutput', act=tf.identity)	
+		#self.y = self.nn_layer(dropped2, out2, self.nbrOutput, 'layerOutput', act=tf.identity)	
+		self.y = self.nn_layerBN(dropped2, out2, self.nbrOutput, self.phase, 'layerOutput', act=tf.identity)	
+		self.y_tanh = self.nn_layerBN(dropped2, out2, self.nbrOutput, self.phase, 'layerOutput-tanh', act=tf.tanh)	
+		
 		#self.y = self.nn_layer(dropped3, out3, nbrOutput, 'layerOutput', act=tf.identity)	
 		
 	def build_modelMINI1(self) :
@@ -1023,7 +1026,9 @@ class NN :
 		#y = nn_layer(dropped, 500, 10, 'layer2', act=tf.identity)
 		#y = nn_layer(dropped2, out2, nbrOutput, 'layer3', act=tf.identity)
 		#self.y = self.nn_layerBN(dropped1, out1, self.nbrOutput, self.phase, layer_name='layerOutput', act=tf.identity)	
-		self.y = self.nn_layer(dropped2, out2, self.nbrOutput, 'layerOutput', act=tf.identity)	
+		#self.y = self.nn_layer(dropped2, out2, self.nbrOutput, 'layerOutput', act=tf.identity)	
+		self.y = self.nn_layerBN(dropped2, out2, self.nbrOutput, self.phase, 'layerOutput', act=tf.identity)	
+		self.y_tanh = self.nn_layerBN(dropped2, out2, self.nbrOutput, self.phase, 'layerOutput-tanh', act=tf.tanh)	
 		#self.y = self.nn_layer(dropped3, out3, nbrOutput, 'layerOutput', act=tf.identity)	
 		
 	def init_model(self,lr=1e-4) :
@@ -1074,62 +1079,62 @@ class NN :
 		  freqTest = 25
 		  
 		  with tf.Session() as self.sess :
-		      # Merge all the summaries and write them out to /tmp/mnist_logs (by default)
-		      self.merged = tf.summary.merge_all()
-		      self.train_writer = tf.summary.FileWriter(self.filepath + '/train', self.sess.graph)
-		      self.test_writer = tf.summary.FileWriter(self.filepath + '/test', self.sess.graph)
+				# Merge all the summaries and write them out to /tmp/mnist_logs (by default)
+				self.merged = tf.summary.merge_all()
+				self.train_writer = tf.summary.FileWriter(self.filepath + '/train', self.sess.graph)
+				self.test_writer = tf.summary.FileWriter(self.filepath + '/test', self.sess.graph)
 
-		      self.init_op = tf.global_variables_initializer()
-		      self.sess.run(self.init_op)
+				self.init_op = tf.global_variables_initializer()
+				self.sess.run(self.init_op)
 
-		      # Add ops to save and restore all the variables.
-		      self.saver = tf.train.Saver()
-		      # START FROM THE MODEL PRE TRAINED :
-		      if filepathIn is not None :
-		      	self.saver.restore(self.sess, filepathIn)
+				# Add ops to save and restore all the variables.
+				self.saver = tf.train.Saver()
+				# START FROM THE MODEL PRE TRAINED :
+				if filepathIn is not None :
+					self.saver.restore(self.sess, filepathIn)
+				
+				for epoch_i in range(nbr_epoch):
+						for i in range(iter_per_epoch - 1):
+								summary, _, loss = self.sess.run([self.merged, self.train_step, self.total_loss], feed_dict=self.feed_dict(True,i))
+								print('TRAINING : Loss at step %s: %s' % ((epoch_i)*iter_per_epoch+(i), loss))
+								self.train_writer.add_summary(summary, epoch_i*iter_per_epoch+i)
 
-		      for epoch_i in range(nbr_epoch):
-		          for i in range(iter_per_epoch - 1):
-		              summary, _, loss = self.sess.run([self.merged, self.train_step, self.total_loss], feed_dict=self.feed_dict(True,i))
-		              print('TRAINING : Loss at step %s: %s' % ((epoch_i)*iter_per_epoch+(i), loss))
-		              self.train_writer.add_summary(summary, epoch_i*iter_per_epoch+i)
+								if i % freqTest == 0:  # Record summaries and test-set accuracy
+								    testiteration += 1
+								    for itest in range(nbrtest) :
+								        summary, loss = self.sess.run([self.merged, self.total_loss], feed_dict=self.feed_dict(False,itest) )
+								        self.test_writer.add_summary(summary, testiteration*nbrtest+itest)
+								        print('TESTING : Loss at step %s: %s' % ((testiteration-1)*nbrtest+itest, loss))
+								    print('Learning rate = '+str(self.sess.run(self.learning_rate)))
+								    # Save the variables to disk.
+								    save_path = self.saver.save(self.sess, self.filepath+'.ckpt')
+								    print("Model saved in file: %s" % save_path)
 
-		              if i % freqTest == 0:  # Record summaries and test-set accuracy
-		                  testiteration += 1
-		                  for itest in range(nbrtest) :
-		                      summary, loss = self.sess.run([self.merged, self.total_loss], feed_dict=self.feed_dict(False,itest) )
-		                      self.test_writer.add_summary(summary, testiteration*nbrtest+itest)
-		                      print('TESTING : Loss at step %s: %s' % ((testiteration-1)*nbrtest+itest, loss))
-		                  print('Learning rate = '+str(self.sess.run(self.learning_rate)))
-		                  # Save the variables to disk.
-		                  save_path = self.saver.save(self.sess, self.filepath+'.ckpt')
-		                  print("Model saved in file: %s" % save_path)
+				self.train_writer.close()
+				self.test_writer.close()
 
-		      self.train_writer.close()
-		      self.test_writer.close()
+				# Save the variables to disk.
+				save_path = self.saver.save(self.sess, self.filepath)
+				print("Model saved in file: %s" % save_path)
 
-		      # Save the variables to disk.
-		      save_path = self.saver.save(self.sess, self.filepath)
-		      print("Model saved in file: %s" % save_path)
-		  
 	def inference(self,x):
 		if not(self.sessionInitialized) :
 			self.sess = tf.Session()
 			self.sessionInitialized = True
 			self.init_op = tf.global_variables_initializer()
-		  self.sess.run(self.init_op)
-		  # Add ops to save and restore all the variables.
-		  self.saver = tf.train.Saver()
-		  # START FROM THE MODEL PRE TRAINED :
-		  self.saver.restore(self.sess, self.filepath+'.ckpt')
-    
-    outputs = self.sess.run([self.y], feed_dict={self.x: x, self.keep_prob: 0.5, self.phase: False})
-    print('INFERENCE : y:')
-    print(outputs)
-    
+			self.sess.run(self.init_op)
+			# Add ops to save and restore all the variables.
+			self.saver = tf.train.Saver()
+			# START FROM THE MODEL PRE TRAINED :
+			self.saver.restore(self.sess, self.filepath+'.ckpt')
+
+		outputs = self.sess.run([self.y], feed_dict={self.x: x, self.keep_prob: 0.5, self.phase: False})
+		print('INFERENCE : y:')
+		print(outputs)
+
 		return outputs
-		        
-	
+				    
+
 	def feed_dict(self,train, iteration=0):
 		  """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
 		  if train :
@@ -1177,13 +1182,13 @@ def main() :
 	parser.add_argument('-t', help='test size fraction',    dest='test_size',         type=float, default=0.2)
 	parser.add_argument('-k', help='drop out probability',  dest='keep_prob',         type=float, default=0.2)
 	parser.add_argument('-n', help='number of epochs',      dest='nb_epoch',          type=int,   default=100)
-	parser.add_argument('-s', help='samples per epoch',     dest='samples_per_epoch', type=int,   default=100)
+	parser.add_argument('-s', help='samples per epoch',     dest='samples_per_epoch', type=int,   default=1000)
 	if useMINI :
-		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=32)
+		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=128)
 	else :
 		parser.add_argument('-b', help='batch size',            dest='batch_size',        type=int,   default=12)
 	parser.add_argument('-o', help='save best models only', dest='save_best_only',    type=s2b,   default='true')
-	parser.add_argument('-l', help='learning rate',         dest='learning_rate',     type=float, default=5.0e-4)
+	parser.add_argument('-l', help='learning rate',         dest='learning_rate',     type=float, default=2.0e-3)
 	args = parser.parse_args()
 	
 	#print parameters
@@ -1207,6 +1212,7 @@ def main() :
 	#240x640
 	filepathIn =  './logs/archiMINI1_240_640--2-0.002.ckpt'
 	
+	#filepathIn = None
 	
 	
 	if train :
