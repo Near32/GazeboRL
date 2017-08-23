@@ -899,7 +899,7 @@ class AC_Network():
 			#PLACEHOLDER :
 			self.target_value = tf.placeholder(shape=[None,1],dtype=tf.float32,name='target_value')
 			self.advantage = tf.placeholder(shape=[None,1], dtype=tf.float32, name='target_advantage')
-			self.target_action = tf.placeholder(tf.float32,[None,self.a_size],name='target_action')
+			#self.target_action = tf.placeholder(tf.float32,[None,self.a_size],name='target_action')
 			#
 			
 			#Losses :
@@ -923,7 +923,8 @@ class AC_Network():
 			self.t_policy_action = self.t_policy[0]
 			self.t_policy_pd = self.t_policy[1]
 			
-			self.policy_loss = tf.reduce_mean( self.pd.logpd(self.target_action) * self.advantage )
+			#self.policy_loss = tf.reduce_mean( self.pd.logpd(self.target_action) * self.advantage )
+			self.policy_loss = tf.reduce_mean( self.pd.logpd(self.action) * self.advantage )
 			#
 			#
 			
@@ -991,7 +992,10 @@ class AC_Network():
 			self.t_keep_prob:1.0,
 			self.t_phase:phase
 			}
-		return sess.run( [self.t_policy], feed_dict=feed_dict)[0]
+		if self.stochastic :
+			return sess.run( [self.t_policy_action], feed_dict=feed_dict)[0]
+		else :
+			return sess.run( [self.t_policy], feed_dict=feed_dict)[0]
 		
 	def predict_critic_target(self, sess, inputs, actions, phase=False) :
 		feed_dict = {self.t_inputs:inputs,
@@ -1141,6 +1145,85 @@ class Worker():
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True,
 				self.local_network.critic_gradients_action:critic_gradients_action[0]}
+		
+			p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
+				self.local_network.actor_grad_norms,
+				self.local_network.apply_grads['actor']],
+				feed_dict=feed_dict)
+					
+		# UPDATE OF THE TARGET NETWORK:
+		#if self.number == 0 :
+		sess.run(self.update_ops_target)
+		
+		# UPDATE OF THE THREAD NETWORK TO BASE NETWORK :
+		sess.run(self.update_ops_thread)
+		sess.run(self.update_ops_thread_target)					
+				
+		return v_l/batch_size, p_l/batch_size, a_g_n, c_g_n, v_n
+		
+		
+		
+	
+	
+	def train_stochastic(self,rollout,sess,gamma,bootstrap_value):
+		rollout = np.array(rollout)
+		observations = np.vstack(rollout[:,0]) #np.reshape( rollout[:,0], newshape=(-1,s_size) )
+		actions = np.vstack(rollout[:,1]) #np.reshape( rollout[:,1], newshape=(-1,a_size) )
+		rewards = np.vstack(rollout[:,2]) #np.reshape( rollout[:,2], newshape=(-1,1) )
+		next_observations = np.vstack(rollout[:,3]) #np.reshape( rollout[:,3], newshape=(-1,s_size) )
+		terminate = np.vstack(rollout[:,4]) #np.reshape(rollout[:,4],newshape=(-1,1) )
+		batch_size = rollout.shape[0]
+		
+		self.target_value_num = []
+		for k in range(batch_size):
+			#self.target_value_num.append(rewards[k,0] + gamma * bootstrap_value[k,0])
+			if terminate[k,0]:
+				self.target_value_num.append(rewards[k,0])
+			else:
+				self.target_value_num.append(rewards[k,0] + gamma * bootstrap_value[k,0])
+		self.target_value_num = np.reshape(self.target_value_num, (batch_size, 1))
+
+		vobs = observations
+		
+		if self.rec :
+			rnn_state = self.local_AC.state_init
+			feed_dict = {self.local_AC.target_value:self.target_value_num,
+				self.local_AC.inputs:vobs,
+				self.local_AC.actions:actions,
+				self.local_AC.state_in[0]:rnn_state[0],
+				self.local_AC.state_in[1]:rnn_state[1],
+				self.local_AC.keep_prob:self.local_AC.dropoutK,
+				self.local_AC.phase:True}
+		else :
+			# TRAIN CRITIC :
+			feed_dict = {self.local_network.target_value:self.target_value_num,
+				self.local_network.inputs:vobs,
+				self.local_network.actions:actions,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:True}
+		
+			v_l, v_n, c_g_n, _ = sess.run([self.local_network.Qvalue_loss,
+				self.local_network.var_norms,
+				self.local_network.critic_grad_norms,
+				self.local_network.apply_grads['critic']],
+				feed_dict=feed_dict)
+		
+			#CREATE ADVANTAGE VALUE :
+			feed_dict = {self.local_network.actions:actions,
+				self.local_network.inputs:vobs,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:False
+				}
+			vvalue, qvalue = sess.run([self.local_network.Vvalue, self.local_network.Qvalue], feed_dict=feed_dict)
+			
+			#TRAIN ACTOR :
+			feed_dict = {self.local_network.actions:actions,
+				self.local_network.target_value:self.target_value_num,
+				self.local_network.inputs:vobs,
+				self.local_network.keep_prob:self.master_network.dropoutK,
+				self.local_network.phase:True,
+				self.local_network.advantage:qvalue-vvalue
+				}
 		
 			p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
 				self.local_network.actor_grad_norms,
