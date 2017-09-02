@@ -1767,8 +1767,9 @@ with tf.Session() as sess:
 		worker_threads.append(t)
 	coord.join(worker_threads)
 
-  
-for envi in env :
-	envi.close()
+
+if useGAZEBO :
+	for envi in env :
+		envi.close()
 
 

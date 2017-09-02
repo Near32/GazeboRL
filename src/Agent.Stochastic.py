@@ -124,7 +124,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 1
 threadExploration = False
 
 lr=1e-4
@@ -774,8 +774,8 @@ class AC_Network():
 			actions = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='actions')
 			#
 			#vvalueadvantage = self.nn_layerBN(rnn_out, shape_out[1], self.nbrOutput, self.phase, 'vvalue-advantage')
-			#actionadvantage = self.nn_layer( actions, self.a_size, 2*self.nbrOutput, 'action-advantage', act=tf.nn.relu)
-			actionadvantage = self.nn_layer( actions, self.a_size, self.nbrOutput, 'action-advantage', act=tf.nn.relu)
+			actionadvantage = self.nn_layer( actions, self.a_size, 2*self.nbrOutput, 'action-advantage', act=tf.nn.relu)
+			#actionadvantage = self.nn_layer( actions, self.a_size, self.nbrOutput, 'action-advantage', act=tf.nn.relu)
 			#vvalueadvantage = self.nn_layer( Vvalue, 1, self.nbrOutput, 'vvalue-advantage')
 			vvalueadvantage = self.nn_layer( rnn_out, shape_out[1], self.nbrOutput, 'vvalue-advantage', act=tf.nn.relu)
 			
@@ -783,12 +783,12 @@ class AC_Network():
 			#concat = tf.nn.relu(vvalueadvantage+ actionadvantage)
 			concat = tf.concat([ rnn_out, actionadvantage], axis=1, name='concat-actions-advantages')
 			concat_shape = concat.get_shape().as_list()
-			#concat = self.nn_layer(concat, concat_shape[1], self.nbrOutput,'hidden-concat-actions-advantages', act=tf.nn.relu)
-			#concat_shape = concat.get_shape().as_list()
+			concat = self.nn_layer(concat, concat_shape[1], self.nbrOutput,'hidden-concat-actions-advantages', act=tf.nn.relu)
+			concat_shape = concat.get_shape().as_list()
 			
 			#hidden = self.nn_layerBN(concat, concat_shape[1], self.nbrOutput, self.phase, 'Q-value-hidden', act=tf.nn.relu)	
 			#hidden = self.nn_layer(concat, concat_shape[1], self.nbrOutput/2, 'Q-value-hidden', act=tf.nn.relu)	
-			Vvalue = hiddenV = self.nn_layer(Vvalue, self.nbrOutput, 1, 'V-value-Advantage', act=tf.identity, std=3e-3,uniform=True)	
+			Vvalue = hiddenV = self.nn_layer(vvalueadvantage, self.nbrOutput, 1, 'V-value-Advantage', act=tf.identity, std=3e-3,uniform=True)	
 			hiddenA = self.nn_layer(concat, concat_shape[1], 1, 'Action-Advantage', act=tf.identity, std=3e-3,uniform=True)	
 			sumhidden = hiddenV+hiddenA
 			#Qvalue = self.nn_layer( Vvalue+actionadvantage, self.nbrOutput, 1, 'Q-value', act=tf.identity)	
@@ -923,15 +923,15 @@ class AC_Network():
 			self.t_policy_action = self.t_policy[0]
 			self.t_policy_pd = self.t_policy[1]
 			
-			#self.policy_loss = tf.reduce_mean( self.pd.logpd(self.target_action) * self.advantage )
-			self.policy_loss = tf.reduce_mean( self.pd.logpd(self.action) * self.advantage )
+			#self.policy_loss = -tf.reduce_mean( self.pd.logpd(self.target_action) * self.advantage )
+			self.policy_loss = -tf.reduce_mean( self.policy_pd.logpd(self.policy_action) * self.advantage )
 			#
 			#
 			
 			#TODO : entropy...
 			
 			#MINIMIZE : self.policy_loss = -tf.reduce_sum(self.Qvalue_policy)
-			self.loss = 0.5*self.Qvalue_loss + 0.5*self.policy_loss #+ self.lambda_regL2*self.l2_loss #- 0.01*self.entropy
+			self.loss = 0.5*self.value_loss + 0.5*self.policy_loss #+ self.lambda_regL2*self.l2_loss #- 0.01*self.entropy
 
 			
 			#Gradients :
@@ -946,8 +946,10 @@ class AC_Network():
 			self.global_var_norms = tf.global_norm(global_vars)
 			
 			
-			self.actor_gradients = tf.gradients(self.loss,local_vars_actor)
-			self.critic_gradients = tf.gradients(self.loss,local_vars_critic)
+			#self.actor_gradients = tf.gradients(self.loss,local_vars_actor)
+			#self.critic_gradients = tf.gradients(self.loss,local_vars_critic)
+			self.actor_gradients = tf.gradients(self.policy_loss,local_vars_actor)
+			self.critic_gradients = tf.gradients(self.value_loss,local_vars_critic)
 			
 			actor_grads,self.actor_grad_norms = tf.clip_by_global_norm(self.actor_gradients,40.0)
 			critic_grads,self.critic_grad_norms = tf.clip_by_global_norm(self.critic_gradients,40.0)
@@ -958,7 +960,8 @@ class AC_Network():
 			#
 			#self.apply_grads = { 'critic':self.trainer['critic'].minimize(self.Qvalue_loss), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
 			#self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
-			self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars_critic) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars_actor)) }
+			#self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars_critic) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars_actor)) }
+			self.apply_grads = { 'critic':self.trainer['critic'].minimize( self.value_loss ), 'actor':self.trainer['actor'].minimize( self.policy_loss) }
 			#
 			#
 		
@@ -1185,6 +1188,7 @@ class Worker():
 
 		vobs = observations
 		
+		
 		if self.rec :
 			rnn_state = self.local_AC.state_init
 			feed_dict = {self.local_AC.target_value:self.target_value_num,
@@ -1202,12 +1206,12 @@ class Worker():
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True}
 		
-			v_l, v_n, c_g_n, _ = sess.run([self.local_network.Qvalue_loss,
+			v_l, v_n, c_g_n, _ = sess.run([self.local_network.value_loss,
 				self.local_network.var_norms,
 				self.local_network.critic_grad_norms,
 				self.local_network.apply_grads['critic']],
 				feed_dict=feed_dict)
-		
+			
 			#CREATE ADVANTAGE VALUE :
 			feed_dict = {self.local_network.actions:actions,
 				self.local_network.inputs:vobs,
@@ -1222,7 +1226,8 @@ class Worker():
 				self.local_network.inputs:vobs,
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True,
-				self.local_network.advantage:qvalue-vvalue
+				self.local_network.advantage:qvalue
+				#self.local_network.advantage:self.target_value_num-qvalue
 				}
 		
 			p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
@@ -1243,7 +1248,8 @@ class Worker():
 		
 		    
 	def work(self,max_episode_length,gamma,sess,coord,saver):
-		LoopRate = rospy.Rate(100)
+		if self.useGAZEBO :
+			LoopRate = rospy.Rate(100)
 		episode_count = sess.run(self.global_episodes)
 		summary_count = 0
 		total_steps = 0
@@ -1280,14 +1286,14 @@ class Worker():
 							if self.number == 0 :
 								print('ENVIRONMENT RESETTED !')
 							s = self.env.reset()
-							if self.number == 0 :
-								self.env.render()
+							#if self.number == 0 :
+							#	self.env.render()
 							s = np.reshape(s,(-1,self.local_network.s_size))
 							#s = process_frame(s)
 						else :
 							s = self.env.reset()
 							if self.number == 0 :
-								rospy.loginfo('ENVIRONMENT RESETTED !')
+								print('ENVIRONMENT RESETTED !')
 							s,dr,ddone,_ = envstep(self.env,dummy_action, self.fromState)
 							if self.fromState==False :
 								s = preprocess(s, img_size[0], img_size[1] )
@@ -1371,8 +1377,8 @@ class Worker():
 								s1, r, d, _ = envstep(self.env, a[0], self.fromState)
 							else :
 								s1, r, d, _ = self.env.step(a)
-								if self.number == 0:
-									self.env.render()
+								#if self.number == 0:
+								#	self.env.render()
 
 							#episode_frames.append(s1)
 							
@@ -1472,7 +1478,8 @@ class Worker():
 						# DATA HANDLING :
 						#
 						#	
-						self.env.setPause(True)
+						if self.useGAZEBO :
+							self.env.setPause(True)
 						
 						actions = np.vstack(actions)
 						if self.number == 0 :
@@ -1627,7 +1634,7 @@ class Worker():
 			#	a1 = self.master_network.predict_actor_target( sess, s1, phase=True)
 			#	q1 = self.master_network.predict_critic_target( sess, s1, a1, phase=True)
 		
-		return self.train( rollout,sess,gamma,q1)
+		return self.train_stochastic( rollout,sess,gamma,q1)
 		
 	def plot_qvalues(self, sess) :
 		h = 100
@@ -1644,7 +1651,7 @@ tf.reset_default_graph()
 with tf.device("/cpu:0"): 
 #with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
-	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
+	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e2)}
 	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState) # Generate global network 
 	workers = []
 	replayBuffer = []
@@ -1692,8 +1699,8 @@ with tf.Session() as sess:
 		worker_threads.append(t)
 	coord.join(worker_threads)
 
-  
-for envi in env :
-	envi.close()
+if useGAZEBO :  
+	for envi in env :
+		envi.close()
 
 
