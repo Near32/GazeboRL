@@ -1,9 +1,9 @@
-# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network
+# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network + PER
 ## We wish to guarantee some policy improvements little by little.
 
 ## TODO : implement the target network trick ?
-useGAZEBO = False
-fromState = True
+useGAZEBO = True
+fromState = False
 equilibriumBased = True
 coupledSystem = False
 strongCoupling = False
@@ -11,20 +11,17 @@ NLonly = False
 if NLonly :
 	coupledSystem = True
 	
-freqSkipFrame = 1000
+freqSkipFrame = 30
 
 
 show = False
 #load_model = True
 load_model = False
 energy_based = True
-#base_port = 11320
-#base_port = 11311
-#base_port = 11411
-base_port = 11452
+base_port = 11311
 if NLonly :
 	base_port = 11330 #NLonly
-reward_bound = 1e1
+reward_bound = 1e0
 
 import threading
 import multiprocessing
@@ -80,12 +77,12 @@ if useGAZEBO :
 
 nbrskipframe = 1
 if useGAZEBO :
+	nbrskipframe = 3
 	#img_size = (180,320,3)
 	#img_size = (90,80,nbrskipframe)
-	#img_size = (120,320,nbrskipframe)
-	nbrskipframe = 4
+	img_size = (120,320,nbrskipframe)
 	#img_size = (120,160,nbrskipframe)
-	img_size = (120,120,nbrskipframe)
+	#img_size = (120,120,nbrskipframe)
 	if fromState :
 		img_size= (1,5,nbrskipframe)
 else :
@@ -110,7 +107,7 @@ if fromState :
 	max_episode_length = 2000
 else :
 	maxReplayBufferSize = 10000#2500
-	max_episode_length = 800
+	max_episode_length = 1000
 
 
 updateT = 1e-0
@@ -128,7 +125,7 @@ updateTauTarget = 1e-3
 #nbrStepsPerReplay = 16
 #nbrStepsPerReplay = 32
 if useGAZEBO :
-	nbrStepsPerReplay = 4#32
+	nbrStepsPerReplay = 8#32
 	if fromState :
 		nbrStepsPerReplay = 32
 else :
@@ -149,7 +146,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 8
+num_workers = 2
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -162,11 +159,13 @@ dividerNoise = 100.0#2.0
 
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s-'+'w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-r1s-PERalpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
 	if fromState :
 		model_path = './FromState/'+model_path
+	else :
+		model_path = './FromPixel/'+model_path
 	if coupledSystem :
 		model_path = model_path+'+coupledSystem'
 	if strongCoupling :
@@ -174,8 +173,7 @@ if useGAZEBO :
 	if equilibriumBased :
 		model_path = model_path+'+equilibriumBased'
 	if NLonly :
-		model_path = './NLonly/'+model_path
-		
+		model_path = './NLonly/'+model_path		
 else :	
 	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
