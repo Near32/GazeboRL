@@ -240,7 +240,10 @@ class Swarm1GazeboRL(GazeboRL) :
 		else :
 			if self.fromState == False :
 				if self.coupledSystem == False :
-					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+					if self.equilibriumBased == False :
+						launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
+					else :
+						launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.Energy+EquilibriumBased.launch')
 				else :
 					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.coupledSystem.launch')
 			else :

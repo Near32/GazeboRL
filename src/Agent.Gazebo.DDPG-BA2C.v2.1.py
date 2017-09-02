@@ -78,7 +78,7 @@ if useGAZEBO :
 
 nbrskipframe = 1
 if useGAZEBO :
-	nbrskipframe = 2
+	nbrskipframe = 1
 	#img_size = (180,320,3)
 	#img_size = (84,84,nbrskipframe)
 	img_size = (120,320,nbrskipframe)
@@ -126,7 +126,7 @@ updateTauTarget = 1e-3
 #nbrStepsPerReplay = 16
 #nbrStepsPerReplay = 32
 if useGAZEBO :
-	nbrStepsPerReplay = 16#32
+	nbrStepsPerReplay = 8#32
 	if fromState :
 		nbrStepsPerReplay = 32
 else :
@@ -147,7 +147,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 8
+num_workers = 5
 if NLonly :
 	num_workers = 1
 threadExploration = False
