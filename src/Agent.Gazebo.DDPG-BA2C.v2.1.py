@@ -29,6 +29,7 @@ import numpy as np
 import time
 import timeit
 import random
+import matplotlib.pyplot as plt
 
 if useGAZEBO :
 	from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
@@ -77,10 +78,10 @@ if useGAZEBO :
 
 nbrskipframe = 1
 if useGAZEBO :
-	nbrskipframe = 3
+	nbrskipframe = 1
 	#img_size = (180,320,3)
-	#img_size = (90,80,nbrskipframe)
-	img_size = (120,320,nbrskipframe)
+	img_size = (84,84,nbrskipframe)
+	#img_size = (120,320,nbrskipframe)
 	#img_size = (120,160,nbrskipframe)
 	#img_size = (120,120,nbrskipframe)
 	if fromState :
@@ -146,7 +147,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 2
+num_workers = 4
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -166,6 +167,7 @@ if useGAZEBO :
 		model_path = './FromState/'+model_path
 	else :
 		model_path = './FromPixel/'+model_path
+		model_path = model_path+'-Frame'+str(imagesize[0])+'x'+str(imagesize[1])+'x'+str(imagesize[2])
 	if coupledSystem :
 		model_path = model_path+'+coupledSystem'
 	if strongCoupling :
@@ -178,6 +180,7 @@ else :
 	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
+print(model_path)
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -188,16 +191,20 @@ if not os.path.exists('./frames'):
 
 
 def preprocess(image, imghr=60, imgwr=320) :
-	img = resize(image, imghr, imgwr)
-	image = rgb2yuv(img)
-	image = np.mean( image, axis=2)
+	shape = image.shape
+	newimg = np.zeros( (imghr, imgwr, shape[2], shape[3]) )
+	for i in range(shape[-1]) :
+		imgi = image[:,:,:,i].reshape( (shape[0],shape[1],shape[2]) )
+		newimg[:,:,:,i] = resize(imgi, imghr, imgwr)
+	image = newimg#rgb2yuv(newimg)
+	image = np.mean( image, axis=2).reshape( (imghr, imgwr, shape[3]) )
 	image = np.array(image)*1.0/127.5
 	image -= 1.0
-	#plt.imshow(image)
+	#plt.imshow(image[:,:,1])
 	#plt.show()
-	return image.reshape((1,-1,1))
+	return image.reshape((1,-1,shape[3]))
 	
-def envstep(env,action) :
+def envsteppixel(env,action) :
 	outimg = None
 	outcmd = None
 	outr = None
@@ -286,7 +293,7 @@ def envstep(env,action,fromState) :
 	
 	for i in range(nbrskipframe) :
 		if fromState == False :
-			outputs.append( envstep(env,action) )
+			outputs.append( envsteppixel(env,action) )
 		else :
 		 	outputs.append( envstepstate(env,action) )
 		looprate.sleep()
