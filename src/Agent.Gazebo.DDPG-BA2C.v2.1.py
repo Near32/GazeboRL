@@ -78,10 +78,10 @@ if useGAZEBO :
 
 nbrskipframe = 1
 if useGAZEBO :
-	nbrskipframe = 1
+	nbrskipframe = 2
 	#img_size = (180,320,3)
-	img_size = (84,84,nbrskipframe)
-	#img_size = (120,320,nbrskipframe)
+	#img_size = (84,84,nbrskipframe)
+	img_size = (120,320,nbrskipframe)
 	#img_size = (120,160,nbrskipframe)
 	#img_size = (120,120,nbrskipframe)
 	if fromState :
@@ -126,7 +126,7 @@ updateTauTarget = 1e-3
 #nbrStepsPerReplay = 16
 #nbrStepsPerReplay = 32
 if useGAZEBO :
-	nbrStepsPerReplay = 8#32
+	nbrStepsPerReplay = 16#32
 	if fromState :
 		nbrStepsPerReplay = 32
 else :
@@ -147,7 +147,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 8
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -156,11 +156,12 @@ lr=1e-4
 #lr=5e-4
 #lr=1e-3
 
-dividerNoise = 100.0#2.0
+dividerNoise = 10.0#2.0
 
 if useGAZEBO :
 	a_size = 2	
-	model_path = './DDPG-BA2C-r1s-PERalpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	#model_path = './DDPG-BA2C-r1s-PERalpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-r1s-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
 	if fromState :
