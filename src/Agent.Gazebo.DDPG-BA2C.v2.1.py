@@ -12,16 +12,18 @@ if NLonly :
 	coupledSystem = True
 	
 freqSkipFrame = 30
-
+meanWindow = 1
 
 show = False
 #load_model = True
 load_model = False
 energy_based = True
-base_port = 11311
+#base_port = 11311
+base_port = 11321
 if NLonly :
 	base_port = 11330 #NLonly
-reward_bound = 1e0
+reward_bound = 1e2
+reward_scaler = 1e-1
 
 import threading
 import multiprocessing
@@ -81,8 +83,8 @@ if useGAZEBO :
 	nbrskipframe = 1
 	#img_size = (180,320,3)
 	#img_size = (84,84,nbrskipframe)
-	img_size = (120,320,nbrskipframe)
-	#img_size = (120,160,nbrskipframe)
+	#img_size = (120,320,nbrskipframe)
+	img_size = (120,160,nbrskipframe)
 	#img_size = (120,120,nbrskipframe)
 	if fromState :
 		img_size= (1,5,nbrskipframe)
@@ -107,11 +109,12 @@ if fromState :
 	maxReplayBufferSize = 200000#100000#2500
 	max_episode_length = 2000
 else :
-	maxReplayBufferSize = 10000#2500
+	maxReplayBufferSize = 100000#2500
 	max_episode_length = 1000
 
 
-updateT = 1e-0
+#updateT = 1e-1
+updateT = 1e0
 
 #updateTauTarget = 1e-6
 #updateTauTarget = 1e-5
@@ -147,16 +150,16 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 5
+num_workers = 4
 if NLonly :
 	num_workers = 1
 threadExploration = False
 
-lr=1e-4
+lr=1e-3
 #lr=5e-4
 #lr=1e-3
 
-dividerNoise = 10.0#2.0
+dividerNoise = 2.0#2.0
 
 if useGAZEBO :
 	a_size = 2	
@@ -1269,7 +1272,6 @@ class Worker():
 		summary_count = 0
 		total_steps = 0
 		logit = 0
-		reward_scaler = 1.0
 		dummy_action = np.zeros(a_size)
 		a_noise = dummy_action
 		a_backup =dummy_action
@@ -1630,11 +1632,11 @@ class Worker():
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)	
 								
 						if self.number == 0 :
-							mean_reward = np.mean(self.episode_rewards[-5:])
-							mean_length = np.mean(self.episode_lengths[-5:])
-							mean_value = np.mean(self.episode_mean_values[-5:])
-							max_value = np.mean(self.episode_max_values[-5:])
-							min_value = np.mean(self.episode_min_values[-5:])
+							mean_reward = np.mean(self.episode_rewards[-meanWindow:])
+							mean_length = np.mean(self.episode_lengths[-meanWindow:])
+							mean_value = np.mean(self.episode_mean_values[-meanWindow:])
+							max_value = np.mean(self.episode_max_values[-meanWindow:])
+							min_value = np.mean(self.episode_min_values[-meanWindow:])
 							summary = tf.Summary()
 							summary.value.add(tag='Perf/Reward', simple_value=float(mean_reward))
 							summary.value.add(tag='Perf/Length', simple_value=float(mean_length))
