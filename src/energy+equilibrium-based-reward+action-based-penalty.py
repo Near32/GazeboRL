@@ -261,8 +261,8 @@ while continuer :
 					
 					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']+np.pi/2.0)/(np.pi/2.0))**2
 					
-					v2 = float(robots[i]['linear_vel'])**2
-					w2 = float(robots[i]['angular_vel'])**2
+					v2 = float(robots[i]['linear_vel'][0])**2
+					w2 = float(robots[i]['angular_vel'][2])**2
 					robots[i]['action_penality'] = v2+w2
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
