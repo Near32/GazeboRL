@@ -1,29 +1,30 @@
-# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network + PER
+# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network
 ## We wish to guarantee some policy improvements little by little.
 
 ## TODO : implement the target network trick ?
 useGAZEBO = True
-fromState = False
+fromState = True
 equilibriumBased = True
-coupledSystem = False
+coupledSystem = True
 strongCoupling = False
-NLonly = False
+NLonly = True
 if NLonly :
 	coupledSystem = True
 	
-freqSkipFrame = 30
-meanWindow = 1
+freqSkipFrame = 1000
+
 
 show = False
 #load_model = True
 load_model = False
 energy_based = True
-#base_port = 11311
-base_port = 11321
+#base_port = 11320
+base_port = 11311
+#base_port = 11411
+#base_port = 11452
 if NLonly :
 	base_port = 11330 #NLonly
-reward_bound = 1e2
-reward_scaler = 1e-1
+reward_bound = 1e1
 
 import threading
 import multiprocessing
@@ -31,7 +32,6 @@ import numpy as np
 import time
 import timeit
 import random
-import matplotlib.pyplot as plt
 
 if useGAZEBO :
 	from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
@@ -48,14 +48,8 @@ else :
 import cv2
 import os
 import numpy as np
-from replayBuffer import EXP, PER
-alphaPER = 0.7
 
-alphaLRELU = 0.2
-def lrelu(x, name='lrelu') :
-	return tf.maximum(x, alphaLRELU*x, name=name)
-	
-	
+
 if useGAZEBO :
 	nbrinput = INPUT_SHAPE_R
 	nbroutput = 2
@@ -84,12 +78,12 @@ if useGAZEBO :
 
 nbrskipframe = 1
 if useGAZEBO :
-	nbrskipframe = 1
-	#img_size = (180,320,nbrskipframe)
-	img_size = (84,84,nbrskipframe)
+	#img_size = (180,320,3)
+	#img_size = (90,80,nbrskipframe)
 	#img_size = (120,320,nbrskipframe)
+	nbrskipframe = 4
 	#img_size = (120,160,nbrskipframe)
-	#img_size = (120,120,nbrskipframe)
+	img_size = (120,120,nbrskipframe)
 	if fromState :
 		img_size= (1,5,nbrskipframe)
 else :
@@ -102,23 +96,19 @@ rec = False
 # In[35]:
 
 a_bound = 1.0
-
-if useGAZEBO:
-	if coupledSystem :
-		a_bound = 2.0
-else :
+if coupledSystem :
 	a_bound = 2.0
-		
+	
+
 if fromState :
 	maxReplayBufferSize = 200000#100000#2500
 	max_episode_length = 2000
 else :
-	maxReplayBufferSize = 50000#2500
-	max_episode_length = 1000
+	maxReplayBufferSize = 2500
+	max_episode_length = 800
 
 
-#updateT = 1e-1
-updateT = 1e0
+updateT = 1e-0
 
 #updateTauTarget = 1e-6
 #updateTauTarget = 1e-5
@@ -133,9 +123,9 @@ updateTauTarget = 1e-3
 #nbrStepsPerReplay = 16
 #nbrStepsPerReplay = 32
 if useGAZEBO :
-	nbrStepsPerReplay = 8#32
+	nbrStepsPerReplay = 4#32
 	if fromState :
-		nbrStepsPerReplay = 32
+		nbrStepsPerReplay = 64
 else :
 	nbrStepsPerReplay = 64
 #nbrStepsPerReplay = 128
@@ -154,28 +144,22 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 8
 if NLonly :
 	num_workers = 1
 threadExploration = False
 
-lr=1e-3
+lr=1e-4
 #lr=5e-4
 #lr=1e-3
 
-dividerNoise = 2.0#2.0
-
 if useGAZEBO :
 	a_size = 2	
-	#model_path = './DDPG-BA2C-r1s-PERalpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
-	model_path = './DDPG-BA2C-r1s-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-r1s-constReset-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 	if threadExploration :
 		model_path = model_path+'+TheadExploration'
 	if fromState :
 		model_path = './FromState/'+model_path
-	else :
-		model_path = './FromPixel/'+model_path
-		model_path = model_path+'-Frame'+str(imagesize[0])+'x'+str(imagesize[1])+'x'+str(imagesize[2])
 	if coupledSystem :
 		model_path = model_path+'+coupledSystem'
 	if strongCoupling :
@@ -183,12 +167,12 @@ if useGAZEBO :
 	if equilibriumBased :
 		model_path = model_path+'+equilibriumBased'
 	if NLonly :
-		model_path = './NLonly/'+model_path		
+		model_path = './NLonly/'+model_path
+		
 else :	
-	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
+	model_path = './DDPG-BA2C-31-'+'w'+str(num_workers)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
 
-print(model_path)
 
 if not os.path.exists(model_path):
     os.makedirs(model_path)    
@@ -199,20 +183,16 @@ if not os.path.exists('./frames'):
 
 
 def preprocess(image, imghr=60, imgwr=320) :
-	shape = image.shape
-	newimg = np.zeros( (imghr, imgwr, shape[2], shape[3]) )
-	for i in range(shape[-1]) :
-		imgi = image[:,:,:,i].reshape( (shape[0],shape[1],shape[2]) )
-		newimg[:,:,:,i] = resize(imgi, imghr, imgwr)
-	image = newimg#rgb2yuv(newimg)
-	image = np.mean( image, axis=2).reshape( (imghr, imgwr, shape[3]) )
+	img = resize(image, imghr, imgwr)
+	image = rgb2yuv(img)
+	image = np.mean( image, axis=2)
 	image = np.array(image)*1.0/127.5
 	image -= 1.0
-	#plt.imshow(image[:,:,1])
+	#plt.imshow(image)
 	#plt.show()
-	return image.reshape((1,-1,shape[3]))
+	return image.reshape((1,-1,1))
 	
-def envsteppixel(env,action) :
+def envstep(env,action) :
 	outimg = None
 	outcmd = None
 	outr = None
@@ -301,7 +281,7 @@ def envstep(env,action,fromState) :
 	
 	for i in range(nbrskipframe) :
 		if fromState == False :
-			outputs.append( envsteppixel(env,action) )
+			outputs.append( envstep(env,action) )
 		else :
 		 	outputs.append( envstepstate(env,action) )
 		looprate.sleep()
@@ -412,7 +392,7 @@ class AC_Network():
 		self.tau = tau
 		self.rec = rec
 		self.dropoutK = dropoutK
-		self.nbrOutput = 128
+		self.nbrOutput = 256
 		
 		self.l2_loss = tf.constant(0.0)
 		self.lambda_regL2 = 0.0	
@@ -655,7 +635,7 @@ class AC_Network():
 					output_dim1 = [ nbr_filter1]
 					#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=5, stride=3, pooldim=2, poolstride=2)
 					#relumaxpoolconv1, input_dim2 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0MaxPool0', act=tf.nn.relu, filter_size=3, stride=1, pooldim=1, poolstride=1)
-					relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act= lrelu , filter_size=10, stride=6,padding='SAME')
+					relumaxpoolconv1, input_dim2 = self.layer_conv2dBNAct(input_tensor=imageIn, input_dim=input_dim1, output_dim=output_dim1, phase=phase, layer_name='conv0', act=tf.nn.relu, filter_size=10, stride=6,padding='SAME')
 					rmpc1_do = tf.nn.dropout(relumaxpoolconv1,keep_prob)
 		
 					#LAYER STN 1 :
@@ -673,7 +653,7 @@ class AC_Network():
 					output_dim2 = [ nbr_filter2]
 					#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=2, pooldim=2, poolstride=2)
 					#relumaxpoolconv2, input_dim3 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1MaxPool1', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-					relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act= lrelu , filter_size=4, stride=3, padding='SAME')
+					relumaxpoolconv2, input_dim3 = self.layer_conv2dBNAct(input_tensor=rmpc1_do, input_dim=input_dim2, output_dim=output_dim2, phase=phase, layer_name='conv1', act=tf.nn.relu, filter_size=4, stride=3, padding='SAME')
 					rmpc2_do = tf.nn.dropout(relumaxpoolconv2,keep_prob)
 		
 					#LAYER STN 2 :
@@ -685,10 +665,10 @@ class AC_Network():
 					#input_dim3 = [shape_input[0], shape_input[1], shape_input[2], shape_input[3]]
 		
 					# CONV LAYER 3 :
-					nbr_filter3 = 64
+					nbr_filter3 = 32
 					output_dim3 = [ nbr_filter3]
 					#relumaxpoolconv3, input_dim4 = self.layer_conv2dBNMaxpoolBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2MaxPool2', act=tf.nn.relu, filter_size=3, stride=1, pooldim=2, poolstride=2)
-					relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=lrelu, filter_size=3, stride=2, padding='SAME')
+					relumaxpoolconv3, input_dim4 = self.layer_conv2dBNAct(input_tensor=rmpc2_do, input_dim=input_dim3, output_dim=output_dim3, phase=phase, layer_name='conv2', act=tf.nn.relu, filter_size=3, stride=2, padding='SAME')
 					rmpc3_do = tf.nn.dropout(relumaxpoolconv3,keep_prob)
 		
 					#LAYER STN 3 :
@@ -709,6 +689,7 @@ class AC_Network():
 			
 					shape_conv = rmpc3_do.get_shape().as_list()
 					shape_fc = [-1, shape_conv[1]*shape_conv[2]*shape_conv[3] ]
+					out1 = 256
 					fc_x_input = tf.reshape( rmpc3_do, shape_fc )
 					convnet = fc_x_input
 				else :
@@ -728,21 +709,21 @@ class AC_Network():
 		with tf.variable_scope(scope):
 			shape_out = convnet.get_shape().as_list()
 			# ACTOR :
-			out1 = 1024
+			out1 = 256
 			#hidden1 = self.nn_layerBN(convnet, shape_out[1], out1, phase, 'actor_layer1', act=tf.nn.relu, std=1e-2, uniform=False)
-			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'actor_layer1', act= lrelu , std=None)
-			dropped1 = tf.nn.dropout(hidden1, keep_prob)
+			#hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'actor_layer1', act=tf.nn.relu, std=1e-2)
+			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			'''
-			out2 = 128
+			out2 = 512
 			#hidden2 = self.nn_layerBN(dropped1, out1, out2, self.phase,'layer2')
-			hidden2 = self.nn_layer(dropped1, out1, out2,'actor_layer2', act= lrelu )
+			hidden2 = self.nn_layer(dropped1, out1, out2,'actor_layer2', act=tf.nn.relu)
 			dropped2 = tf.nn.dropout(hidden2, keep_prob)
 			'''
-			yactor = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase,'actor_layerOutput', act=lrelu, std=1e-2, uniform=False)
-			#yactor = self.nn_layer(dropped2, out2, self.nbrOutput, 'actor_layerOutput', act= lrelu , std=None)
+			#yactor = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase,'actor_layerOutput', act=tf.nn.relu, std=1e-2, uniform=False)
+			#yactor = self.nn_layer(dropped1, out1, self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
 			#yactor = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
-			#yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
+			yactor = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'actor_layerOutput', act=tf.nn.relu, std=1e-2)
 			
 			hidden = yactor
 			
@@ -750,7 +731,7 @@ class AC_Network():
 				shape = cmd.get_shape().as_list()
 				cmd_r = tf.reshape(cmd,shape=(-1,shape[1]*shape[2]))
 				hidden = tf.concat([ hidden, cmd_r], axis=1, name='concat-hidden-cmd')
-				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'actor_hidden_concat_layer', act=lrelu, std=1e-3)
+				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 			
 			#Recurrent network for temporal dependencies
@@ -792,8 +773,8 @@ class AC_Network():
 				
 			shape_out = rnn_out.get_shape().as_list()
 
-			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
-			#scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
+			#scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
+			scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
 			policy = tf.multiply(scaled_out, self.a_bound)	
 			
 			return policy
@@ -807,33 +788,20 @@ class AC_Network():
 			# CRITIC :
 			out1 = 512
 			#hidden1 = self.nn_layerBN(convnet, self.s_size, out1, phase, 'critic_layer1', act=tf.nn.relu)
-			hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=lrelu)
-			dropped1 = tf.nn.dropout(hidden1, keep_prob)
+			#hidden1 = self.nn_layer(convnet, shape_out[1], out1, 'critic_layer1', act=tf.nn.relu)
+			#dropped1 = tf.nn.dropout(hidden1, keep_prob)
 			
 			out2 = 256
 			#hidden2 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
 			#hidden2 = self.nn_layerBN(dropped1, out1, out2, phase, 'critic_layer2', act=tf.nn.relu)
-			hidden2 = self.nn_layer(dropped1, out1, out2,'critic_layer2', act=lrelu)
-			dropped2 = tf.nn.dropout(hidden2, keep_prob)
-			'''
-			out3 = 256
-			#hidden3 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
-			#hidden3 = self.nn_layerBN(dropped1, out1, out2, phase, 'critic_layer2', act=tf.nn.relu)
-			hidden3 = self.nn_layer(dropped2, out2, out3,'critic_layer3', act=lrelu)
-			dropped3 = tf.nn.dropout(hidden3, keep_prob)
+			#hidden2 = self.nn_layer(dropped1, out1, out2,'critic_layer2', act=tf.nn.relu)
+			#dropped2 = tf.nn.dropout(hidden2, keep_prob)
 			
-			out4 = 256
-			#hidden4 = self.nn_layerBN(convnet, shape_out[1], out2, phase, 'critic_layer2', act=tf.nn.relu)
-			#hidden4 = self.nn_layerBN(dropped1, out1, out2, phase, 'critic_layer2', act=tf.nn.relu)
-			hidden4 = self.nn_layer(dropped3, out3, out4,'critic_layer4', act=lrelu)
-			dropped4 = tf.nn.dropout(hidden4, keep_prob)
-			'''
-			#ycritic = self.nn_layer(dropped4, out4, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
-			ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
+			#ycritic = self.nn_layer(dropped2, out2, self.nbrOutput, 'critic_layerOutput', act=tf.identity)
 			#ycritic = self.nn_layer(dropped1, out1, self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
 			#ycritic = self.nn_layerBN(dropped1, out1, self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			#ycritic = self.nn_layer(convnet, shape_out[1], self.nbrOutput, 'critic_layerOutput', act=tf.nn.relu)
-			#ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
+			ycritic = self.nn_layerBN(convnet, shape_out[1], self.nbrOutput, phase, 'critic_layerOutput', act=tf.nn.relu)
 			
 			hidden = ycritic
 			
@@ -841,7 +809,7 @@ class AC_Network():
 				shape = cmd.get_shape().as_list()
 				cmd_r = tf.reshape(cmd,shape=(-1,shape[1]*shape[2]))
 				hidden = tf.concat([ hidden, cmd_r], axis=1, name='concat-hidden-cmd')
-				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'critic_hidden_concat_layer', act=lrelu, std=1e-3)
+				hidden = self.nn_layerBN(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, phase, 'critic_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 				#hidden = self.nn_layer(hidden, hidden.get_shape().as_list()[1], self.nbrOutput, 'actor_hidden_concat_layer', act=tf.nn.relu, std=1e-3)
 			
 			
@@ -884,17 +852,17 @@ class AC_Network():
 			actions = tf.placeholder(shape=[None,self.a_size],dtype=tf.float32,name='actions')
 			#
 			#vvalueadvantage = self.nn_layerBN(rnn_out, shape_out[1], self.nbrOutput, self.phase, 'vvalue-advantage')
-			actionadvantage = self.nn_layer( actions, self.a_size, 2*self.nbrOutput, 'action-advantage', act=lrelu)
-			#actionadvantage = self.nn_layer( actions, self.a_size, self.nbrOutput, 'action-advantage', act=tf.nn.relu)
+			#actionadvantage = self.nn_layer( actions, self.a_size, 2*self.nbrOutput, 'action-advantage', act=tf.nn.relu)
+			actionadvantage = self.nn_layer( actions, self.a_size, self.nbrOutput, 'action-advantage', act=tf.nn.relu)
 			#vvalueadvantage = self.nn_layer( Vvalue, 1, self.nbrOutput, 'vvalue-advantage')
-			Vvalue = vvalueadvantage = self.nn_layer( rnn_out, shape_out[1], self.nbrOutput, 'vvalue-advantage', act=lrelu)
+			Vvalue = vvalueadvantage = self.nn_layer( rnn_out, shape_out[1], self.nbrOutput, 'vvalue-advantage', act=tf.nn.relu)
 			
 			#concat = tf.concat( [vvalueadvantage, actions], axis=1,name='concat-vvalue-actions-advantages')
 			#concat = tf.nn.relu(vvalueadvantage+ actionadvantage)
 			concat = tf.concat([ rnn_out, actionadvantage], axis=1, name='concat-actions-advantages')
 			concat_shape = concat.get_shape().as_list()
-			concat = self.nn_layer(concat, concat_shape[1], self.nbrOutput,'hidden-concat-actions-advantages', act=lrelu)
-			concat_shape = concat.get_shape().as_list()
+			#concat = self.nn_layer(concat, concat_shape[1], self.nbrOutput,'hidden-concat-actions-advantages', act=tf.nn.relu)
+			#concat_shape = concat.get_shape().as_list()
 			
 			#hidden = self.nn_layerBN(concat, concat_shape[1], self.nbrOutput, self.phase, 'Q-value-hidden', act=tf.nn.relu)	
 			#hidden = self.nn_layer(concat, concat_shape[1], self.nbrOutput/2, 'Q-value-hidden', act=tf.nn.relu)	
@@ -924,8 +892,7 @@ class AC_Network():
 			
 			#Gradients :
 			qreshaped = tf.reshape(self.Qvalue,(-1,1))
-			self.Qvalue_errors = tf.abs(self.target_qvalue - qreshaped)
-			self.Qvalue_loss = tf.reduce_mean(self.Qvalue_errors)
+			self.Qvalue_loss = tf.reduce_mean(tf.abs(self.target_qvalue - qreshaped))
 			#self.Qvalue_loss = tf.reduce_mean(tf.square(self.target_qvalue - qreshaped))
 			#self.Qvalue_loss = tf.losses.mean_squared_error(labels=self.target_qvalue,predictions=self.Qvalue)
 			#self.Qvalue_loss = tf.squared_difference(self.target_qvalue,self.Qvalue)
@@ -1098,7 +1065,7 @@ class Worker():
 		
 		self.master_network = master_network
 		self.name = "worker_" + str(name)
-		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e0)}
+		self.trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e1)}
 		self.local_network = AC_Network(self.master_network.imagesize,self.master_network.s_size,self.master_network.h_size,self.master_network.a_size,self.master_network.a_bound,self.name,self.trainer,tau=self.master_network.tau,rec=rec,useGAZEBO=self.useGAZEBO, fromState=self.fromState, strongCoupling=self.strongCoupling)
 		self.number = name        
 		self.model_path = model_path
@@ -1142,7 +1109,6 @@ class Worker():
 		rewards = np.vstack(rollout[:,2]) #np.reshape( rollout[:,2], newshape=(-1,1) )
 		next_observations = np.vstack(rollout[:,3]) #np.reshape( rollout[:,3], newshape=(-1,s_size) )
 		terminate = np.vstack(rollout[:,4]) #np.reshape(rollout[:,4],newshape=(-1,1) )
-		indexes = np.vstack(rollout[:,5])
 		batch_size = rollout.shape[0]
 		
 		if self.coupledSystem :
@@ -1186,8 +1152,7 @@ class Worker():
 				self.local_network.keep_prob:self.master_network.dropoutK,
 				self.local_network.phase:True}
 		
-			errors, v_l, v_n,_ = sess.run([self.local_network.Qvalue_errors,
-				self.local_network.Qvalue_loss,
+			v_l, v_n,_ = sess.run([self.local_network.Qvalue_loss,
 				self.local_network.var_norms,
 				self.local_network.apply_grads['critic']],
 				feed_dict=feed_dict)
@@ -1249,13 +1214,7 @@ class Worker():
 				self.local_network.actor_grad_norms,
 				self.local_network.apply_grads['actor']],
 				feed_dict=feed_dict)
-		
-		#UPDATE THE PER :
-		for (idx, new_error) in zip(indexes,errors) :
-			new_priority = self.rBuffer.priority(new_error)
-			#print( 'prior = {} / {}'.format(new_priority,self.rBuffer.total()) )
-			self.rBuffer.update(idx,new_priority)
-			
+					
 		# UPDATE OF THE TARGET NETWORK:
 		#if self.number == 0 :
 		sess.run(self.update_ops_target)
@@ -1269,12 +1228,12 @@ class Worker():
 		
 		    
 	def work(self,max_episode_length,gamma,sess,coord,saver):
-		if self.useGAZEBO :
-			LoopRate = rospy.Rate(100)
+		LoopRate = rospy.Rate(100)
 		episode_count = sess.run(self.global_episodes)
 		summary_count = 0
 		total_steps = 0
 		logit = 0
+		reward_scaler = 1.0
 		dummy_action = np.zeros(a_size)
 		a_noise = dummy_action
 		a_backup =dummy_action
@@ -1315,7 +1274,7 @@ class Worker():
 						else :
 							s = self.env.reset()
 							if self.number == 0 :
-								print('ENVIRONMENT RESETTED !')
+								rospy.loginfo('ENVIRONMENT RESETTED !')
 							obs,dr,ddone,_ = envstep(self.env,dummy_action, self.fromState)
 							s = obs[0]
 							cmd = obs[1]
@@ -1384,12 +1343,12 @@ class Worker():
 							'''
 							
 							# ORNSTEIN-UHLENBECK EXPLORATION NOISE : variable scale...
-							if True : #episode_count%2 and (self.coupledSystem==False):
-								scale = self.local_network.a_bound/dividerNoise#2.0
+							if episode_count%2 and (self.coupledSystem==False):
+								scale = self.local_network.a_bound/100.0#2.0
 								theta = 0.15
 								sigma = 0.3*scale
 								a_backup = a[0]
-								dt = 1e-0
+								dt = 1e-2
 								for i in range(a_size) :
 									a_noise[i] += theta*(0.0-a_noise[i])*dt+sigma*np.sqrt(dt)*np.random.normal(loc=0.0,scale=1.0)
 									a[0,i] += a_noise[i]
@@ -1466,11 +1425,11 @@ class Worker():
 							
 							
 							if self.coupledSystem == False :
-								#step = [s,a,r,s1,d,q[0]]
-								step = EXP(s,a,s1,r,d)
+								step = [s,a,r,s1,d,q[0]]
 							else :
 								step = [s,a,r,s1,d,q[0],cmd,cmd1]
 							episode_buffer.append(step)
+							#self.rBuffer.append(step)
 							
 							episode_values.append(q[0])
 							actions.append(a[0])
@@ -1478,8 +1437,7 @@ class Worker():
 
 							episode_reward += r
 							s = s1            
-							if self.useGAZEBO :
-								cmd = cmd1        
+							cmd = cmd1        
 							total_steps += 1
 							episode_step_count += 1
 							
@@ -1548,13 +1506,10 @@ class Worker():
 							else :
 								logit += 1
 							
-							# TRAINING :
-							#
-							#if self.rBuffer.counter > self.nbrStepPerReplay:
+							
+							#if len(self.rBuffer) > self.nbrStepPerReplay:
 							#	v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
 							#	q_loss += np.mean(v_l)
-							#
-							#
 							
 							if self.useGAZEBO :
 								LoopRate.sleep()
@@ -1577,8 +1532,7 @@ class Worker():
 						# DATA HANDLING :
 						#
 						#	
-						if self.useGAZEBO :
-							self.env.setPause(True)
+						self.env.setPause(True)
 						
 						actions = np.vstack(actions)
 						if self.number == 0 :
@@ -1596,11 +1550,13 @@ class Worker():
 
 
 						#Let us add this episode_buffer to the replayBuffer :
+						#self.rBuffer.append(episode_buffer)
 						for el in episode_buffer :
-							init_priority = self.rBuffer.priority( np.abs(el.r) )
-							self.rBuffer.add(el,init_priority)
+							self.rBuffer.append(el)
 						
-						
+						while len(self.rBuffer) > maxReplayBufferSize :
+							del self.rBuffer[0]
+
 						# Periodically save gifs of episodes, model parameters, and summary statistics.
 						if self.number == 0 :
 							if episode_count % 5 == 0 and episode_count != 0:
@@ -1621,7 +1577,7 @@ class Worker():
 						# TRAINING :
 						#
 						#
-						if self.rBuffer.counter > self.nbrStepPerReplay:
+						if len(self.rBuffer) > self.nbrStepPerReplay:
 							for i in range(self.nbrStepPerReplay) :
 								v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)
 								q_loss += np.mean(v_l)
@@ -1631,15 +1587,15 @@ class Worker():
 					#END OF IF SELF.NUMBER == 0
 					
 					# Update the network using the experience replay buffer:
-					if self.rBuffer.counter > self.nbrStepPerReplay:
+					if len(self.rBuffer) > self.nbrStepPerReplay:
 						v_l,p_l,a_g_n,c_g_n,v_n = self.train_on_rBuffer(sess)	
 								
 						if self.number == 0 :
-							mean_reward = np.mean(self.episode_rewards[-meanWindow:])
-							mean_length = np.mean(self.episode_lengths[-meanWindow:])
-							mean_value = np.mean(self.episode_mean_values[-meanWindow:])
-							max_value = np.mean(self.episode_max_values[-meanWindow:])
-							min_value = np.mean(self.episode_min_values[-meanWindow:])
+							mean_reward = np.mean(self.episode_rewards[-5:])
+							mean_length = np.mean(self.episode_lengths[-5:])
+							mean_value = np.mean(self.episode_mean_values[-5:])
+							max_value = np.mean(self.episode_max_values[-5:])
+							min_value = np.mean(self.episode_min_values[-5:])
 							summary = tf.Summary()
 							summary.value.add(tag='Perf/Reward', simple_value=float(mean_reward))
 							summary.value.add(tag='Perf/Length', simple_value=float(mean_length))
@@ -1666,19 +1622,9 @@ class Worker():
 
 	def train_on_rBuffer(self,sess) :
 		a1 = None
-		prioritysum = self.rBuffer.total()
-		#idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
-		randexp = np.random.random(size=self.nbrStepPerReplay)*prioritysum
-		minibatch = list()
-		for i in range(self.nbrStepPerReplay):
-			try :
-				el = self.rBuffer.get(randexp[i])
-				minibatch.append(el)
-			except TypeError as e :
-				continue
-				#print('REPLAY BUFFER EXCEPTION...')
+		idxSteps = np.random.randint(low=0, high=len(self.rBuffer), size=self.nbrStepPerReplay)
 		
-		rollout = np.vstack( [ [el[2].s, el[2].a, el[2].r, el[2].s1, el[2].done, el[0]] for el in minibatch ] )
+		rollout = np.vstack( [ self.rBuffer[idxS] for idxS in idxSteps ] )
 		
 		s1 = np.vstack(rollout[:,3])
 		if self.strongCoupling :
@@ -1713,8 +1659,6 @@ class Worker():
 				q1 = self.local_network.predict_critic_target( sess, s1, a1, cmd1, phase=True)
 				
 		return self.train( rollout,sess,gamma,q1)
-	
-	
 		
 	def plot_qvalues(self, sess) :
 		h = 100
@@ -1729,11 +1673,12 @@ tf.reset_default_graph()
 
 
 with tf.device("/cpu:0"): 
+#with tf.device("/gpu:0"): 
 	global_episodes = tf.Variable(0,dtype=tf.int32,name='global_episodes',trainable=False)
-	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr*1e-1), 'critic':tf.train.AdamOptimizer(learning_rate=lr*1e1)}
+	trainer = { 'actor':tf.train.AdamOptimizer(learning_rate=lr), 'critic':tf.train.AdamOptimizer(learning_rate=lr*10.0)}
 	master_network = AC_Network(imagesize,s_size,h_size,a_size,a_bound,'global',trainer,tau=updateTauTarget,rec=rec,useGAZEBO=useGAZEBO, fromState=fromState, strongCoupling=strongCoupling) # Generate global network 
 	workers = []
-	replayBuffer = PER(capacity=maxReplayBufferSize,alpha=alphaPER)
+	replayBuffer = []
 	
 	# Create worker classes
 	for i in range(num_workers):

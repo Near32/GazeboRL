@@ -1,10 +1,11 @@
-# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network + PER
+# # Reinforcement Learning : DDPG-A2C : actor output scaled with boundary + target network + separated network + random + dueling critic network + PER +penalize the actions...
 ## We wish to guarantee some policy improvements little by little.
 
 ## TODO : implement the target network trick ?
 useGAZEBO = True
 fromState = False
 equilibriumBased = True
+penalizeAction = True
 coupledSystem = False
 strongCoupling = False
 NLonly = False
@@ -18,8 +19,7 @@ show = False
 #load_model = True
 load_model = False
 energy_based = True
-#base_port = 11311
-base_port = 11321
+base_port = 11331
 if NLonly :
 	base_port = 11330 #NLonly
 reward_bound = 1e2
@@ -73,7 +73,7 @@ if useGAZEBO :
 
 if useGAZEBO :
 	env= list()
-	env.append( Swarm1GazeboRL(base_port,energy_based, coupledSystem=coupledSystem, fromState=fromState, equilibriumBased=equilibriumBased) )
+	env.append( Swarm1GazeboRL(base_port,energy_based, coupledSystem=coupledSystem, fromState=fromState, equilibriumBased=equilibriumBased, penalizeAction=penalizeAction) )
 	base_port += 1
 	env[0].make()
 	print('\n\nwait for 5 sec...\n\n')
@@ -113,7 +113,7 @@ if fromState :
 	maxReplayBufferSize = 200000#100000#2500
 	max_episode_length = 2000
 else :
-	maxReplayBufferSize = 50000#2500
+	maxReplayBufferSize = 10000#2500
 	max_episode_length = 1000
 
 
@@ -141,7 +141,7 @@ else :
 #nbrStepsPerReplay = 128
 
 
-gamma = 0.99 # discount rate for advantage estimation and reward discounting
+gamma = 0.9 # discount rate for advantage estimation and reward discounting
 imagesize = [img_size[0],img_size[1], img_size[2] ]
 s_size = imagesize[0]*imagesize[1]*imagesize[2]
 
@@ -154,7 +154,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 4
+num_workers = 2
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -182,6 +182,8 @@ if useGAZEBO :
 		model_path = model_path+'+strongCoupling'
 	if equilibriumBased :
 		model_path = model_path+'+equilibriumBased'
+	if penalizeAction :
+		model_path = model_path+'+penalizeAction'
 	if NLonly :
 		model_path = './NLonly/'+model_path		
 else :	

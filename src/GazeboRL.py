@@ -217,12 +217,13 @@ class GazeboRL :
 
 
 class Swarm1GazeboRL(GazeboRL) :
-	def __init__(self,port=11311,energy_based=False, fromState=False, coupledSystem=False, equilibriumBased=False):
+	def __init__(self,port=11311,energy_based=False, fromState=False, coupledSystem=False, equilibriumBased=False, penalizeAction=False):
 		self.continuousActions = False
 		self.energy_based = energy_based
 		self.fromState = fromState
 		self.coupledSystem = coupledSystem
 		self.equilibriumBased = equilibriumBased
+		self.penalizeAction = penalizeAction
 		
 		self.port = port
 		self.envdict = os.environ
@@ -243,7 +244,10 @@ class Swarm1GazeboRL(GazeboRL) :
 					if self.equilibriumBased == False :
 						launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.launch')
 					else :
-						launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.Energy+EquilibriumBased.launch')
+						if self.penalizeAction == False :
+							launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.Energy+EquilibriumBased.launch')
+						else :
+							launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.Energy+EquilibriumBased+PenalizeActions.launch')
 				else :
 					launchCom.append('roslaunch -p '+str(self.port)+' GazeboRL robot1swarm.EnergyBased.coupledSystem.launch')
 			else :
