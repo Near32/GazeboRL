@@ -51,8 +51,8 @@ tstate = None
 tr = Float64()
 tr.data = 0.0
 maxvalue = 10.0
-beta = args.beta		#factor that levels the equilibrium constrains.
-gamma = -np.abs(args.gamma) 	#factor that levels the penalization over actions. 
+beta = float(args.beta)		#factor that levels the equilibrium constrains.
+gamma = float(-np.abs(args.gamma) ) 	#factor that levels the penalization over actions. 
 
 
 
@@ -261,8 +261,8 @@ while continuer :
 					
 					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']+np.pi/2.0)/(np.pi/2.0))**2
 					
-					v2 = np.square(robots[i]['linear_vel'])
-					w2 = np.square(robots[i]['angular_vel'])
+					v2 = float(robots[i]['linear_vel'])**2
+					w2 = float(robots[i]['angular_vel'])**2
 					robots[i]['action_penality'] = v2+w2
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
