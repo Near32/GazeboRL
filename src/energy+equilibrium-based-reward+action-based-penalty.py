@@ -268,7 +268,7 @@ while continuer :
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
 					swarm_equilibrium += robots[i]['equilibrium']
 					
-					rewards[robots[i]['name']] = robots[i]['kinetic_energy']+beta*robots[i]['equilibrium']+gamma*robots[i]['action_penalty']
+					rewards[robots[i]['name']] = robots[i]['kinetic_energy']+beta*robots[i]['equilibrium']+gamma*robots[i]['action_penality']
 					
 					tr.data += 1.0/(1e-3 + rewards[robots[i]['name']])
 					
