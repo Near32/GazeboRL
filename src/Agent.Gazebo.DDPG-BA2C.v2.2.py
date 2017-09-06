@@ -5,7 +5,7 @@
 useGAZEBO = True
 fromState = False
 equilibriumBased = True
-penalizeAction = True
+penalizeAction = False
 coupledSystem = False
 strongCoupling = False
 NLonly = False
@@ -22,7 +22,7 @@ energy_based = True
 base_port = 11331
 if NLonly :
 	base_port = 11330 #NLonly
-reward_bound = 1e2
+reward_bound = 1e3
 reward_scaler = 1e-1
 
 import threading
@@ -32,6 +32,7 @@ import time
 import timeit
 import random
 import matplotlib.pyplot as plt
+import copy
 
 if useGAZEBO :
 	from GazeboRL import GazeboRL, Swarm1GazeboRL, init_roscore
@@ -154,7 +155,7 @@ h_size = 256
 a_size = 1
 eps_greedy_prob = 0.3
 		
-num_workers = 2
+num_workers = 8
 if NLonly :
 	num_workers = 1
 threadExploration = False
@@ -163,7 +164,7 @@ lr=1e-3
 #lr=5e-4
 #lr=1e-3
 
-dividerNoise = 2.0#2.0
+dividerNoise = 10.0#2.0
 
 if useGAZEBO :
 	a_size = 2	
@@ -189,6 +190,8 @@ if useGAZEBO :
 else :	
 	model_path = './DDPG-BA2C-v2+PER-alpha'+str(alphaPER)+'-w'+str(num_workers)+'-divNoise'+str(dividerNoise)+'-lr'+str(lr)+'-b'+str(nbrStepsPerReplay)+'-T'+str(updateT)+'-tau'+str(updateTauTarget)+'-skip'+str(nbrskipframe)
 
+#model_path = './test/1'
+model_path = './test/2'
 
 print(model_path)
 
@@ -422,8 +425,8 @@ class AC_Network():
 		self.summary_ops = []
 		
 		#inputs, actions, policy, Vvalue, Qvalue, keep_prob, phase
-		self.inputs, self.actions, self.cmd, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase = self.create_network(self.scope)
-		self.t_inputs, self.t_actions, self.t_cmd, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase = self.create_network(self.scope+'_target')
+		self.inputs, self.actions, self.cmd, self.policy, self.Vvalue, self.Qvalue, self.keep_prob, self.phase, self.actor_state_in, self.actor_state_out, self.actor_state_init, self.critic_state_in, self.critic_state_out, self.critic_state_init = self.create_network(self.scope)
+		self.t_inputs, self.t_actions, self.t_cmd, self.t_policy, self.t_Vvalue, self.t_Qvalue, self.t_keep_prob, self.t_phase, self.t_actor_state_in, self.t_actor_state_out, self.t_actor_state_init, self.t_critic_state_in, self.t_critic_state_out, self.t_critic_state_init = self.create_network(self.scope+'_target')
 		
 		self.build_loss_functions()
 		
@@ -635,11 +638,10 @@ class AC_Network():
 			else :
 				cmd = None
 			#
-		policy = self.build_actor(inputs, cmd, keep_prob, phase, scope+'/actor')
-		Vvalue, Qvalue, actions = self.build_critic(inputs, cmd, keep_prob, phase, scope+'/critic') 
-		#TODO : handled the rec placeholder and others...
+		policy, actor_state_in, actor_state_out, actor_state_init = self.build_actor(inputs, cmd, keep_prob, phase, scope+'/actor')
+		Vvalue, Qvalue, actions, critic_state_in, critic_state_out, critic_state_init = self.build_critic(inputs, cmd, keep_prob, phase, scope+'/critic') 
 		
-		return inputs, actions, cmd, policy, Vvalue, Qvalue, keep_prob, phase
+		return inputs, actions, cmd, policy, Vvalue, Qvalue, keep_prob, phase, actor_state_in, actor_state_out , actor_state_init, critic_state_in, critic_state_out, critic_state_init
 	
 	
 		
@@ -767,7 +769,7 @@ class AC_Network():
 				lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.h_size,state_is_tuple=True)
 				c_init = np.zeros((1, lstm_cell.state_size.c), np.float32)
 				h_init = np.zeros((1, lstm_cell.state_size.h), np.float32)
-				state_init = [c_init, h_init]
+				actor_state_init = [c_init, h_init]
 				#PLACEHOLDER :
 				c_in_actor = tf.placeholder(tf.float32, [1, lstm_cell.state_size.c], name="c_in_actor")
 				#
@@ -782,23 +784,21 @@ class AC_Network():
 					lstm_cell, rnn_in, initial_state=state_in, sequence_length=step_size,
 					time_major=False)
 				lstm_c, lstm_h = lstm_state
-				state_out = (lstm_c[:1, :], lstm_h[:1, :])
+				actor_state_out = (lstm_c[:1, :], lstm_h[:1, :])
 				rnn_out = tf.reshape(lstm_outputs, [-1, self.h_size])
 			else :
 				rnn_out = hidden
 				actor_state_init = None
 				actor_state_in = None
 				actor_state_out = None
-				c_in_actor = None
-				c_out_actor = None
 				
 			shape_out = rnn_out.get_shape().as_list()
 
-			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-3, uniform=False)	
+			scaled_out = 	self.nn_layer(rnn_out, shape_out[1], self.a_size, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
 			#scaled_out = 	self.nn_layerBN(rnn_out, shape_out[1], self.a_size, phase, 'policy', act=tf.tanh, std=1e-6, uniform=False)	
 			policy = tf.multiply(scaled_out, self.a_bound)	
 			
-			return policy
+			return policy, actor_state_in, actor_state_out, actor_state_init
 		
 			
 	def build_critic(self, inputs, cmd, keep_prob, phase, scope) :			
@@ -859,14 +859,14 @@ class AC_Network():
 				lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.h_size,state_is_tuple=True)
 				c_init = np.zeros((1, lstm_cell.state_size.c), np.float32)
 				h_init = np.zeros((1, lstm_cell.state_size.h), np.float32)
-				state_init = [c_init, h_init]
+				critic_state_init = [c_init, h_init]
 				#PLACEHOLDER :
 				c_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.c])
 				#
 				#PLACEHOLDER :
 				h_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.h])
 				#
-				state_in = (c_in, h_in)
+				critic_state_in = (c_in, h_in)
 				rnn_in = tf.expand_dims(hidden, [0])
 				step_size = tf.shape(imageIn)[:1]
 				state_in = tf.contrib.rnn.LSTMStateTuple(c_in, h_in)
@@ -874,10 +874,14 @@ class AC_Network():
 					lstm_cell, rnn_in, initial_state=state_in, sequence_length=step_size,
 					time_major=False)
 				lstm_c, lstm_h = lstm_state
-				state_out = (lstm_c[:1, :], lstm_h[:1, :])
+				critic_state_out = (lstm_c[:1, :], lstm_h[:1, :])
 				rnn_out = tf.reshape(lstm_outputs, [-1, self.h_size])
 			else :
 				rnn_out = hidden
+				critic_state_init = None
+				critic_state_in = None
+				critic_state_out = None
+				
 				
 			shape_out = rnn_out.get_shape().as_list()
 			#Vvalue = self.nn_layer(rnn_out, shape_out[1], 1, 'V-value', act=tf.identity)	
@@ -910,7 +914,7 @@ class AC_Network():
 			#Qvalue = slim.fully_connected(actionadvantage+Vvalue,1,activation_fn=None,weights_initializer=normalized_columns_initializer(0.001),biases_initializer=None)
 		
 		
-		return Vvalue, Qvalue, actions 
+		return Vvalue, Qvalue, actions, critic_state_in, critic_state_out, critic_state_init
 		
 		
 			
@@ -983,11 +987,11 @@ class AC_Network():
 			
 			self.critic_gradients_action_op = tf.gradients(self.Qvalue,self.actions)
 			#self.critic_gradients_action_op = tf.gradients(self.policy_loss,self.actions)
-			self.actor_gradients = tf.gradients(self.policy,local_vars_actor, -self.critic_gradients_action )
-			#self.actor_gradients = tf.gradients(self.policy,local_vars, -self.critic_gradients_action )
+			#self.actor_gradients = tf.gradients(self.policy,local_vars_actor, -self.critic_gradients_action )
+			self.actor_gradients = tf.gradients(self.policy,local_vars, -self.critic_gradients_action )
 			
-			self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars_critic)
-			#self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars)
+			#self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars_critic)
+			self.critic_gradients = tf.gradients(self.Qvalue_loss,local_vars)
 			#self.critic_gradients = tf.gradients(self.loss,local_vars)
 			
 			'''
@@ -1001,12 +1005,12 @@ class AC_Network():
 			
 			
 			#self.apply_grads = { 'critic':self.trainer['critic'].minimize(self.Qvalue_loss), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
-			#self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
-			self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars_critic) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars_actor)) }
+			self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars)) }
+			#self.apply_grads = { 'critic':self.trainer['critic'].apply_gradients( zip(self.critic_gradients,global_vars_critic) ), 'actor':self.trainer['actor'].apply_gradients(zip(self.actor_gradients,global_vars_actor)) }
 			
 			
 			
-	def predict_actor(self, sess, inputs, cmd=None, phase=False) :
+	def predict_actor(self, sess, inputs, rnn_states=None, cmd=None, phase=False) :
 		if cmd is None :
 			feed_dict = {self.inputs:inputs,
 			self.keep_prob:1.0,
@@ -1018,9 +1022,19 @@ class AC_Network():
 			self.keep_prob:1.0,
 			self.phase:phase
 			}
-		return sess.run( [self.policy], feed_dict=feed_dict)[0]
 		
-	def predict_critic(self, sess, inputs, actions, cmd=None, phase=False) :
+		if self.rec :
+			feed_dict[self.actor_state_in[0]] = rnn_states[0][0]
+			feed_dict[self.actor_state_in[1]] = rnn_states[0][1]
+			
+		if self.rec :
+			policy, rnn_states[0] = sess.run( [self.policy, self.actor_state_out], feed_dict=feed_dict)[0]
+		else :
+			policy = sess.run( [self.policy], feed_dict=feed_dict)[0]
+
+		return policy
+		
+	def predict_critic(self, sess, inputs, actions, rnn_states=None, cmd=None, phase=False) :
 		if cmd is None :
 			feed_dict = {self.inputs:inputs,
 			self.actions:actions,
@@ -1034,8 +1048,69 @@ class AC_Network():
 			self.keep_prob:1.0,
 			self.phase:phase
 			}
-		return sess.run( [self.Qvalue], feed_dict=feed_dict)[0]
+			
+		if self.rec :
+			feed_dict[self.critic_state_in[0]] = rnn_states[1][0]
+			feed_dict[self.critic_state_in[1]] = rnn_states[1][1]
+			
+		if self.rec :
+			value, rnn_states[1] = sess.run( [self.Qvalue, self.critic_state_out], feed_dict=feed_dict)[0]
+		else :
+			value = sess.run( [self.Qvalue], feed_dict=feed_dict)[0]
+
+		return value
 		
+	def predict_actor_target(self, sess, inputs, rnn_states=None, cmd=None, phase=False) :
+		if cmd is None :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_keep_prob:1.0,
+			self.t_phase:phase
+			}
+		else :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_cmd:cmd,
+			self.t_keep_prob:1.0,
+			self.t_phase:phase
+			}
+		
+		if self.rec :
+			feed_dict[self.t_actor_state_in[0]] = rnn_states[0][0]
+			feed_dict[self.t_actor_state_in[1]] = rnn_states[0][1]
+			
+		if self.rec :
+			policy, rnn_states[0] = sess.run( [self.t_policy, self.t_actor_state_out], feed_dict=feed_dict)[0]
+		else :
+			policy = sess.run( [self.t_policy], feed_dict=feed_dict)[0]
+
+		return policy
+		
+	def predict_critic_target(self, sess, inputs, actions, rnn_states=None, cmd=None, phase=False) :
+		if cmd is None :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_actions:actions,
+			self.t_keep_prob:1.0,
+			self.t_phase:phase
+			}
+		else :
+			feed_dict = {self.t_inputs:inputs,
+			self.t_actions:actions,
+			self.t_cmd:cmd,
+			self.t_keep_prob:1.0,
+			self.t_phase:phase
+			}
+			
+		if self.rec :
+			feed_dict[self.t_critic_state_in[0]] = rnn_states[1][0]
+			feed_dict[self.t_critic_state_in[1]] = rnn_states[1][1]
+			
+		if self.rec :
+			value, rnn_states[1] = sess.run( [self.t_Qvalue, self.t_critic_state_out], feed_dict=feed_dict)[0]
+		else :
+			value = sess.run( [self.t_Qvalue], feed_dict=feed_dict)[0]
+
+		return value
+	
+	'''
 	def predict_actor_target(self, sess, inputs, cmd=None, phase=False) :
 		if cmd is None :
 			feed_dict = {self.t_inputs:inputs,
@@ -1065,7 +1140,7 @@ class AC_Network():
 			self.t_phase:phase
 			}
 		return sess.run( [self.t_Qvalue], feed_dict=feed_dict)[0]
-		
+	'''	
 			
 
 
@@ -1163,94 +1238,91 @@ class Worker():
 
 		vobs = observations
 		
-		if self.rec :
-			rnn_state = self.local_AC.state_init
-			feed_dict = {self.local_AC.target_qvalue:self.target_qvalue_num,
-				self.local_AC.inputs:vobs,
-				self.local_AC.actions:actions,
-				self.local_AC.state_in[0]:rnn_state[0],
-				self.local_AC.state_in[1]:rnn_state[1],
-				self.local_AC.keep_prob:self.local_AC.dropoutK,
-				self.local_AC.phase:True}
+		# TRAIN CRITIC :
+		if self.strongCoupling == False :
+			feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
+			self.local_network.inputs:vobs,
+			self.local_network.actions:actions,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:True}
 		else :
-			# TRAIN CRITIC :
-			if self.strongCoupling == False :
-				feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.inputs:vobs,
-				self.local_network.actions:actions,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:True}
-			else :
-				feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.inputs:vobs,
-				self.local_network.actions:actions,
-				self.local_network.cmd:cmd,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:True}
+			feed_dict = {self.local_network.target_qvalue:self.target_qvalue_num,
+			self.local_network.inputs:vobs,
+			self.local_network.actions:actions,
+			self.local_network.cmd:cmd,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:True}
 		
-			errors, v_l, v_n,_ = sess.run([self.local_network.Qvalue_errors,
-				self.local_network.Qvalue_loss,
-				self.local_network.var_norms,
-				self.local_network.apply_grads['critic']],
-				feed_dict=feed_dict)
+		if self.rec :
+			rnn_states = (self.local_AC.actor_state_init, self.local_AC.critic_state_init)
+			feed_dict[self.local_AC.actor_state_in[0]] = rnn_states[0][0]
+			feed_dict[self.local_AC.actor_state_in[1]] = rnn_states[0][1]
+			feed_dict[self.local_AC.critic_state_in[0]] = rnn_states[1][0]
+			feed_dict[self.local_AC.critic_state_in[1]] = rnn_states[1][1]
 			
-			#CREATE VALUES :
-			if self.strongCoupling == False :
-				a_out = self.local_network.predict_actor(sess, vobs,phase=True)
-			else :
-				a_out = self.local_network.predict_actor(sess, vobs, cmd, phase=True)
-			
-			if self.strongCoupling == False :
-				feed_dict = {self.local_network.inputs:vobs,
-				self.local_network.actions:a_out,
-				self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:False}
-			else :
-				feed_dict = {self.local_network.inputs:vobs,
-				self.local_network.actions:a_out,
-				self.local_network.cmd:cmd,
-				self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:False}
-			
-			critic_gradients_action, c_g_n = sess.run([self.local_network.critic_gradients_action_op, self.local_network.critic_grad_norms],
-				feed_dict = feed_dict)
-				#/batch_size
-				#TODO : decide about the importance of the division by batch_size....
-			
-			#TRAIN ACTOR :
-			'''
+		errors, v_l, v_n,_ = sess.run([self.local_network.Qvalue_errors,
+			self.local_network.Qvalue_loss,
+			self.local_network.var_norms,
+			self.local_network.apply_grads['critic']],
+			feed_dict=feed_dict)
+		
+		#CREATE VALUES :
+		if self.strongCoupling == False :
+			a_out = self.local_network.predict_actor(sess, vobs,phase=True)
+		else :
+			a_out = self.local_network.predict_actor(sess, vobs, cmd, phase=True)
+		
+		if self.strongCoupling == False :
 			feed_dict = {self.local_network.inputs:vobs,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:True,
-				self.local_network.critic_gradients_action:critic_gradients_action[0]}
+			self.local_network.actions:a_out,
+			self.local_network.target_qvalue:self.target_qvalue_num,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:False}
+		else :
+			feed_dict = {self.local_network.inputs:vobs,
+			self.local_network.actions:a_out,
+			self.local_network.cmd:cmd,
+			self.local_network.target_qvalue:self.target_qvalue_num,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:False}
 		
-			p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
-				self.local_network.actor_grad_norms,
-				self.local_network.apply_grads['actor']],
-				feed_dict=feed_dict)	
-			'''
-			if self.strongCoupling == False :
-				feed_dict = {self.local_network.actions:actions,
-				self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.inputs:vobs,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:True,
-				self.local_network.critic_gradients_action:critic_gradients_action[0]}
-			else :
-				feed_dict = {self.local_network.actions:actions,
-				self.local_network.target_qvalue:self.target_qvalue_num,
-				self.local_network.inputs:vobs,
-				self.local_network.cmd:cmd,
-				self.local_network.keep_prob:self.master_network.dropoutK,
-				self.local_network.phase:True,
-				self.local_network.critic_gradients_action:critic_gradients_action[0]}
+		critic_gradients_action, c_g_n = sess.run([self.local_network.critic_gradients_action_op, self.local_network.critic_grad_norms],
+			feed_dict = feed_dict)
+			#/batch_size
+			#TODO : decide about the importance of the division by batch_size....
 		
-			p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
-				self.local_network.actor_grad_norms,
-				self.local_network.apply_grads['actor']],
-				feed_dict=feed_dict)
+		#TRAIN ACTOR :
+		'''
+		feed_dict = {self.local_network.inputs:vobs,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:True,
+			self.local_network.critic_gradients_action:critic_gradients_action[0]}
+	
+		p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
+			self.local_network.actor_grad_norms,
+			self.local_network.apply_grads['actor']],
+			feed_dict=feed_dict)	
+		'''
+		if self.strongCoupling == False :
+			feed_dict = {self.local_network.actions:actions,
+			self.local_network.target_qvalue:self.target_qvalue_num,
+			self.local_network.inputs:vobs,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:True,
+			self.local_network.critic_gradients_action:critic_gradients_action[0]}
+		else :
+			feed_dict = {self.local_network.actions:actions,
+			self.local_network.target_qvalue:self.target_qvalue_num,
+			self.local_network.inputs:vobs,
+			self.local_network.cmd:cmd,
+			self.local_network.keep_prob:self.master_network.dropoutK,
+			self.local_network.phase:True,
+			self.local_network.critic_gradients_action:critic_gradients_action[0]}
+	
+		p_l, a_g_n,_ = sess.run([self.local_network.policy_loss,
+			self.local_network.actor_grad_norms,
+			self.local_network.apply_grads['actor']],
+			feed_dict=feed_dict)
 		
 		#UPDATE THE PER :
 		for (idx, new_error) in zip(indexes,errors) :
@@ -1280,6 +1352,7 @@ class Worker():
 		dummy_action = np.zeros(a_size)
 		a_noise = dummy_action
 		a_backup =dummy_action
+		rnn_states_backup
 		
 		print ("Starting worker " + str(self.number))
 		make_gif_log = False
@@ -1325,11 +1398,13 @@ class Worker():
 								s = preprocess(s, img_size[0], img_size[1] )
 						
 						#episode_frames.append(s)
-					
+						rnn_states = (None, None)
 						if self.rec :
-							#TODO :
-							rnn_state = self.master_network.state_init
-				
+							if self.number == 0 :
+								rnn_states = (self.master_network.actor_state_init, self.master_network.critic_state_init)
+							else :
+								rnn_states = (self.local_network.actor_state_init, self.local_network.critic_state_init)
+								
 						remainingSteps = max_episode_length   
 						actions = []   
 						a_noise = np.zeros(a_size)
@@ -1343,36 +1418,20 @@ class Worker():
 						while d == False :
 							start = time()
 							remainingSteps -= 1
+							rnn_states_backup = copy.deepcopy( rnn_states )
 							
 							#Take an action using probabilities from policy network output.
-							if self.rec :
-								rnn_state_q = rnn_state
-								a,v,rnn_state = sess.run([self.local_AC.policy,self.local_AC.Vvalue,self.local_AC.Qvalue,self.local_AC.state_out], 
-									feed_dict={self.local_AC.inputs:s,
-									self.local_AC.state_in[0]:rnn_state[0],
-									self.local_AC.state_in[1]:rnn_state[1],
-									self.local_AC.keep_prob:1.0,
-									self.local_AC.phase:False})
-								#summary, q = sess.run([self.local_AC.merged_summary, self.local_AC.Qvalue], 
-								q = sess.run([ self.local_AC.Qvalue], 
-										feed_dict={self.local_AC.inputs:s,
-									self.local_AC.state_in[0]:rnn_state_q[0],
-									self.local_AC.state_in[1]:rnn_state_q[1],
-									self.local_AC.actions:a,
-									self.local_AC.keep_prob:1.0,
-									self.local_AC.phase:False})
-							else :
-								if self.number == 0 :
-									if self.strongCoupling == False :
-										a = self.master_network.predict_actor(sess, s)
-									else :
-										a = self.master_network.predict_actor(sess, s, cmd)
+							if self.number == 0 :
+								if self.strongCoupling == False :
+									a = self.master_network.predict_actor(sess, s, rnn_states[0])
 								else :
-									if self.strongCoupling == False :
-										a = self.local_network.predict_actor(sess, s)
-									else :
-										a = self.local_network.predict_actor(sess, s, cmd)
-								
+									a = self.master_network.predict_actor(sess, s, cmd, rnn_states[0])
+							else :
+								if self.strongCoupling == False :
+									a = self.local_network.predict_actor(sess, s, rnn_states[0])
+								else :
+									a = self.local_network.predict_actor(sess, s, cmd, rnn_states[0])
+							
 							
 							#EXPLORATION NOISE :
 							'''
@@ -1447,6 +1506,8 @@ class Worker():
 							if np.abs(r) > reward_bound :
 								r = reward_bound*np.sign(r)
 								
+							#Penalize action :
+							r -= np.sum( np.abs( a_backup ) )
 							r /= reward_scaler
 							
 									
@@ -1457,20 +1518,23 @@ class Worker():
 							q = None
 							if self.number == 0 :
 								if self.strongCoupling == False :
-									q = self.master_network.predict_critic(sess,s,a)
+									q = self.master_network.predict_critic(sess,s,a, rnn_states[1])
 								else :
-									q = self.master_network.predict_critic(sess,s,a,cmd)
+									q = self.master_network.predict_critic(sess,s,a,cmd, rnn_states[1])
 							else :
 								if self.strongCoupling == False :
-									q = self.local_network.predict_critic(sess,s,a)
+									q = self.local_network.predict_critic(sess,s,a, rnn_states[1])
 								else :
-									q = self.local_network.predict_critic(sess,s,a,cmd)
+									q = self.local_network.predict_critic(sess,s,a,cmd, rnn_states[1])
 							
 							
 							if self.coupledSystem == False :
-								#step = [s,a,r,s1,d,q[0]]
-								step = EXP(s,a,s1,r,d)
+								if self.rec :
+									step = EXP_RNN(s,a,s1,r,d,rnn_states)
+								else :
+									step = EXP(s,a,s1,r,d)
 							else :
+								#TODO : rnn .... + EXP
 								step = [s,a,r,s1,d,q[0],cmd,cmd1]
 							episode_buffer.append(step)
 							
@@ -1513,6 +1577,16 @@ class Worker():
 										self.master_network.t_keep_prob:1.0,
 										self.master_network.t_phase:False}
 									
+									if self.rec :
+										feed_dict[self.master_network.actor_state_in[0]] = rnn_states_backup[0][0]
+										feed_dict[self.master_network.actor_state_in[1]] = rnn_states_backup[0][1]
+										feed_dict[self.master_network.critic_state_in[0]] = rnn_states_backup[1][0]
+										feed_dict[self.master_network.critic_state_in[1]] = rnn_states_backup[1][1]
+										feed_dict[self.master_network.t_actor_state_in[0]] = rnn_states_backup[0][0]
+										feed_dict[self.master_network.t_actor_state_in[1]] = rnn_states_backup[0][1]
+										feed_dict[self.master_network.t_critic_state_in[0]] = rnn_states_backup[1][0]
+										feed_dict[self.master_network.t_critic_state_in[1]] = rnn_states_backup[1][1]
+										
 									summary = sess.run(self.master_network.summary_ops, 
 										feed_dict=feed_dict)
 									self.test_summary_writer.add_summary(summary,summary_count)
@@ -1539,6 +1613,16 @@ class Worker():
 										self.local_network.t_cmd:cmd,
 										self.local_network.t_keep_prob:1.0,
 										self.local_network.t_phase:False}
+									
+									if self.rec :
+										feed_dict[self.local_network.actor_state_in[0]] = rnn_states_backup[0][0]
+										feed_dict[self.local_network.actor_state_in[1]] = rnn_states_backup[0][1]
+										feed_dict[self.local_network.critic_state_in[0]] = rnn_states_backup[1][0]
+										feed_dict[self.local_network.critic_state_in[1]] = rnn_states_backup[1][1]
+										feed_dict[self.local_network.t_actor_state_in[0]] = rnn_states_backup[0][0]
+										feed_dict[self.local_network.t_actor_state_in[1]] = rnn_states_backup[0][1]
+										feed_dict[self.local_network.t_critic_state_in[0]] = rnn_states_backup[1][0]
+										feed_dict[self.local_network.t_critic_state_in[1]] = rnn_states_backup[1][1]
 									
 									summary = sess.run(self.local_network.summary_ops, 
 										feed_dict=feed_dict)
@@ -1680,40 +1764,27 @@ class Worker():
 				continue
 				#print('REPLAY BUFFER EXCEPTION...')
 		
-		rollout = np.vstack( [ [el[2].s, el[2].a, el[2].r, el[2].s1, el[2].done, el[0]] for el in minibatch ] )
+		if self.rec :
+			rollout = np.vstack( [ [el[2].s, el[2].a, el[2].r, el[2].s1, el[2].done, el[2].rnn_states, el[0]] for el in minibatch ] )
+		else :
+			rollout = np.vstack( [ [el[2].s, el[2].a, el[2].r, el[2].s1, el[2].done, el[0]] for el in minibatch ] )
 		
 		s1 = np.vstack(rollout[:,3])
+		rnn_states = np.vstack(rollout[:,5])
+		
 		if self.strongCoupling :
+			#TODO : exp + cmd + rnn 
 			cmd1 = np.vstack(rollout[:,7])
 		
 		# Since we don't know what the true final return is, we "bootstrap" from our current
 		# q value estimation that is done by the target network of the master network on which we apply the gradients...
-		if self.rec :
-			a1 = sess.run(self.local_AC.policy,
-			feed_dict={self.local_AC.inputs:s1,
-			self.local_AC.state_in[0]:rnn_state[0],
-			self.local_AC.state_in[1]:rnn_state[1],
-			self.local_AC.keep_prob:1.0,
-			self.local_AC.phase:False})
-			q1 = sess.run(self.local_AC.Qvalue, 
-			feed_dict={self.local_AC.inputs:s1,
-			self.local_AC.state_in[0]:rnn_state[0],
-			self.local_AC.state_in[1]:rnn_state[1],
-			self.local_AC.actions:a,
-			self.local_AC.keep_prob:1.0,
-			self.local_AC.phase:False})[0,0]
+		if self.strongCoupling == False :
+			a1 = self.local_network.predict_actor_target( sess, s1, rnn_states, phase=True)
+			q1 = self.local_network.predict_critic_target( sess, s1, a1, rnn_states, phase=True)
 		else :
-			if self.strongCoupling == False :
-				#if self.number != 0 :
-				a1 = self.local_network.predict_actor_target( sess, s1, phase=True)
-				q1 = self.local_network.predict_critic_target( sess, s1, a1, phase=True)
-				#else :
-				#	a1 = self.master_network.predict_actor_target( sess, s1, phase=True)
-				#	q1 = self.master_network.predict_critic_target( sess, s1, a1, phase=True)
-			else :
-				a1 = self.local_network.predict_actor_target( sess, s1, cmd1, phase=True)
-				q1 = self.local_network.predict_critic_target( sess, s1, a1, cmd1, phase=True)
-				
+			a1 = self.local_network.predict_actor_target( sess, s1, rnn_states, cmd=cmd1, phase=True)
+			q1 = self.local_network.predict_critic_target( sess, s1, a1, rnn_states, cmd=cmd1, phase=True)
+			
 		return self.train( rollout,sess,gamma,q1)
 	
 	

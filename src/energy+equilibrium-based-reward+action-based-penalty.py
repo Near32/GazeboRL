@@ -31,6 +31,9 @@ buffstate = list()
 def callbackState(state) :
 	buffstate.append(state)
 	
+buffcmd = list()
+def callbackCOMMAND(cmd) :
+	buffcmd.append(cmd)
 
 
 continuer = True
@@ -41,15 +44,22 @@ rospy.init_node('EnergyBasedReward_node', anonymous=False)
 rospy.on_shutdown(shuttingdown)
 
 subState = rospy.Subscriber( '/gazebo/model_states', ModelStates, callbackState )
+subCmd = rospy.Subscriber( '/robot_model_teleop_0/cmd_vel', Twist, callbackCOMMAND )
 pubR = rospy.Publisher('/RL/reward',Float64,queue_size=10)
+pubL = rospy.Publisher('/RL/logging',Float64,queue_size=10)
 
 freq = 100
 dt = 1.0/freq
 rate = rospy.Rate(freq)
 
 tstate = None
+tcmd = None
+
 tr = Float64()
 tr.data = 0.0
+log = Float64()
+log.data = 0.0
+
 maxvalue = 10.0
 beta = float(args.beta)		#factor that levels the equilibrium constrains.
 gamma = float(-np.abs(args.gamma) ) 	#factor that levels the penalization over actions. 
@@ -106,6 +116,10 @@ while continuer :
 	if len(buffstate) :
 		tstate = buffstate[-1]
 		del buffstate[:]
+		
+		if len(buffcmd) :
+			tcmd = buffcmd[-1]
+			del buffcmd[:]
 		
 		#gather information :
 		nbrRobot = 0
@@ -261,16 +275,21 @@ while continuer :
 					
 					robots[i]['equilibrium'] = ((robots[i]['r']-args.radius)/args.radius)**2 + ((robots[i]['theta']+np.pi/2.0)/(np.pi/2.0))**2
 					
-					v2 = float( np.abs(robots[i]['linear_vel'][0]))
-					w2 = float( np.abs(robots[i]['angular_vel'][2]))
-					robots[i]['action_penality'] = v2+w2
+					if tcmd is not None :
+						v2 = np.abs( tcmd.linear.x )#float( np.abs(robots[i]['linear_vel'][0]))
+						w2 = np.abs( tcmd.angular.z )#float( np.abs(robots[i]['angular_vel'][2]))
+						robots[i]['action_penality'] = v2+w2
+					else :
+						robots[i]['action_penality'] = 0.0
+					
+					log.data = robots[i]['action_penality']
 					
 					swarm_kinetic_energy += robots[i]['kinetic_energy']
 					swarm_equilibrium += robots[i]['equilibrium']
 					
-					rewards[robots[i]['name']] = robots[i]['kinetic_energy']+beta*robots[i]['equilibrium']+gamma*robots[i]['action_penality']
+					rewards[robots[i]['name']] = robots[i]['kinetic_energy']+beta*robots[i]['equilibrium']
 					
-					tr.data += 1.0/(1e-3 + rewards[robots[i]['name']])
+					tr.data += 1.0/(1e-3 + rewards[robots[i]['name']]) + gamma*robots[i]['action_penality']
 					
 					#rospy.loginfo('robot: {} :: phi={} :: psi={} :: theta={}'.format(robots[i]['name'],robots[i]['phi']*180.0/np.pi,robots[i]['psi']*180.0/np.pi, robots[i]['theta']*180.0/np.pi ) )
 					#rospy.loginfo('robot: {} :: v={} :: w={}'.format(robots[i]['name'],robots[i]['controlLaw'][0],robots[i]['controlLaw'][1] ) )
@@ -285,6 +304,9 @@ while continuer :
 	if tr is not None :
 		pubR.publish(tr)
 	
+	if log is not None :
+		pubL.publish( log )
+		
 	if continuer :	
 		rate.sleep()
 	
