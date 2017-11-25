@@ -7,7 +7,19 @@ class EXP(object) :
 		self.s1 = s1
 		self.r = r
 		self.done = done
-	
+
+class State(object) :
+	def __init__(self, state) :
+		self.state = state
+		
+	def __call__(self) :
+		return self.state
+			
+class EXP_RNN(EXP) :
+	def __init__(self, s, a, s1, r, done, rnn_states) :
+		EXP.__init__(self,s=s,a=a,s1=s1,r=r,done=done)
+		self.rnn_states = rnn_states
+
 
 class PER() :
 	def __init__(self,capacity, alpha=0.2) :

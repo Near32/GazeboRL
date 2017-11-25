@@ -97,7 +97,7 @@ def controlLaw(kv,kw,a,r,rd,theta,om,eps,psi) :
 rd = dict()
 rewards = dict()
 			
-while continuer :
+while not rospy.is_shutdown() :
 	
 	if len(buffstate) :
 		tstate = buffstate[-1]
